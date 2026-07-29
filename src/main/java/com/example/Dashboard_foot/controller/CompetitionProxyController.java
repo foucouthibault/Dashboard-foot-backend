@@ -1,6 +1,7 @@
 package com.example.Dashboard_foot.controller;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestTemplate;
@@ -22,6 +23,7 @@ public class CompetitionProxyController {
     }
 
     @GetMapping("/{id}")
+    @Cacheable(value = "footballData", key = "#id")
     public ResponseEntity<String> proxyCompetition(@PathVariable String id, 
                                                    @RequestHeader(required = false) HttpHeaders headers) {
         String url = apiBaseUrl + "/competitions/" + id;
@@ -29,9 +31,18 @@ public class CompetitionProxyController {
     }
 
     @GetMapping("/{id}/standings")
+    @Cacheable(value = "footballData", key = "'standings_' + #id")
     public ResponseEntity<String> proxyStandings(@PathVariable String id, 
                                                  @RequestHeader(required = false) HttpHeaders headers) {
         String url = apiBaseUrl + "/competitions/" + id + "/standings";
+        return proxyRequest(url, headers);
+    }
+
+    @GetMapping("/{id}/matches")
+    @Cacheable(value = "footballData", key = "'matches_' + #id")
+    public ResponseEntity<String> proxyMatches(@PathVariable String id, 
+                                               @RequestHeader(required = false) HttpHeaders headers) {
+        String url = apiBaseUrl + "/competitions/" + id + "/matches";
         return proxyRequest(url, headers);
     }
 
