@@ -6,6 +6,9 @@ import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestTemplate;
 
+import java.net.URI;
+import java.net.URISyntaxException;
+
 @RestController
 @RequestMapping("/api/competitions")
 public class CompetitionProxyController {
@@ -17,15 +20,37 @@ public class CompetitionProxyController {
     
     @Value("${football-data.api.token:}")
     private String apiToken;
+    
+    private String allowedDomain;
+    
+    private static final String VALID_ID_PATTERN = "^[a-zA-Z0-9_-]+$";
 
     public CompetitionProxyController(RestTemplate restTemplate) {
         this.restTemplate = restTemplate;
+    }
+
+    private boolean isValidId(String id) {
+        return id == null || !id.matches(VALID_ID_PATTERN);
+    }
+
+    private String extractDomain(String url) {
+        try {
+            URI uri = new URI(url);
+            String host = uri.getHost();
+            return host != null ? host : "api.football-data.org";
+        } catch (URISyntaxException e) {
+            return "api.football-data.org";
+        }
     }
 
     @GetMapping("/{id}")
     @Cacheable(value = "footballData", key = "#id")
     public ResponseEntity<String> proxyCompetition(@PathVariable String id, 
                                                    @RequestHeader(required = false) HttpHeaders headers) {
+        if (isValidId(id)) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body("{" + "\"error\":\"Invalid competition ID format\"" + "}");
+        }
         String url = apiBaseUrl + "/competitions/" + id;
         return proxyRequest(url, headers);
     }
@@ -34,6 +59,10 @@ public class CompetitionProxyController {
     @Cacheable(value = "footballData", key = "'standings_' + #id")
     public ResponseEntity<String> proxyStandings(@PathVariable String id, 
                                                  @RequestHeader(required = false) HttpHeaders headers) {
+        if (isValidId(id)) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body("{" + "\"error\":\"Invalid competition ID format\"" + "}");
+        }
         String url = apiBaseUrl + "/competitions/" + id + "/standings";
         return proxyRequest(url, headers);
     }
@@ -42,6 +71,10 @@ public class CompetitionProxyController {
     @Cacheable(value = "footballData", key = "'matches_' + #id")
     public ResponseEntity<String> proxyMatches(@PathVariable String id, 
                                                @RequestHeader(required = false) HttpHeaders headers) {
+        if (isValidId(id)) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body("{" + "\"error\":\"Invalid competition ID format\"" + "}");
+        }
         String url = apiBaseUrl + "/competitions/" + id + "/matches";
         return proxyRequest(url, headers);
     }
@@ -70,7 +103,7 @@ public class CompetitionProxyController {
         
         try {
             ResponseEntity<String> response = restTemplate.exchange(
-                url, 
+                URI.create(url), 
                 HttpMethod.GET, 
                 entity, 
                 String.class
@@ -91,7 +124,7 @@ public class CompetitionProxyController {
             return new ResponseEntity<>(response.getBody(), responseHeaders, response.getStatusCode());
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
-                .body("{" + "\"error\":\"Failed to proxy request: " + e.getMessage() + "\"" + "}");
+                .body("{" + "\"error\":\"Failed to fetch data from API\"" + "}");
         }
     }
 }
