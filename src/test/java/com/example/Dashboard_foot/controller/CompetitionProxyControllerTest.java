@@ -178,6 +178,63 @@ class CompetitionProxyControllerTest {
         assertEquals(mockResponse, response.getBody());
     }
 
+    // ==================== Tests pour /scorers ====================
+
+    @Test
+    void testProxyScorers_whenInvalidId_returnsBadRequest() {
+        String invalidId = "PL<script>";
+        ResponseEntity<String> response = controller.proxyScorers(invalidId, null, headers);
+        
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        if (response.getBody() != null) {
+            assertTrue(response.getBody().contains("Invalid competition ID format"));
+        }
+    }
+
+    @Test
+    void testProxyScorers_whenValidId_returnsData() {
+        String validId = "PL";
+        String expectedUrl = "https://api.football-data.org/v4/competitions/PL/scorers";
+        String mockResponse = "{\"scorers\":[{\"player\":{\"name\":\"Player 1\"},\"goals\":10}]}";
+        
+        ResponseEntity<String> mockEntity = new ResponseEntity<>(mockResponse, HttpStatus.OK);
+        
+        when(restTemplate.exchange(
+            eq(URI.create(expectedUrl)),
+            eq(HttpMethod.GET),
+            any(HttpEntity.class),
+            eq(String.class)
+        )).thenReturn(mockEntity);
+
+        ResponseEntity<String> response = controller.proxyScorers(validId, null, headers);
+        
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(mockResponse, response.getBody());
+        assertEquals(MediaType.APPLICATION_JSON, response.getHeaders().getContentType());
+    }
+
+    @Test
+    void testProxyScorers_whenValidIdWithLimit_returnsData() {
+        String validId = "FL1";
+        Integer limit = 10;
+        String expectedUrl = "https://api.football-data.org/v4/competitions/FL1/scorers?limit=10";
+        String mockResponse = "{\"scorers\":[{\"player\":{\"name\":\"Player 1\"},\"goals\":15}]}";
+        
+        ResponseEntity<String> mockEntity = new ResponseEntity<>(mockResponse, HttpStatus.OK);
+        
+        when(restTemplate.exchange(
+            eq(URI.create(expectedUrl)),
+            eq(HttpMethod.GET),
+            any(HttpEntity.class),
+            eq(String.class)
+        )).thenReturn(mockEntity);
+
+        ResponseEntity<String> response = controller.proxyScorers(validId, limit, headers);
+        
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(mockResponse, response.getBody());
+    }
+
     // ==================== Tests d'erreur ====================
 
     @Test
