@@ -79,6 +79,22 @@ public class CompetitionProxyController {
         return proxyRequest(url, headers);
     }
 
+    @GetMapping("/{id}/scorers")
+    @Cacheable(value = "footballData", key = "'scorers_' + #id + '_' + #limit")
+    public ResponseEntity<String> proxyScorers(@PathVariable String id, 
+                                              @RequestParam(required = false) Integer limit,
+                                              @RequestHeader(required = false) HttpHeaders headers) {
+        if (isValidId(id)) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body("{" + "\"error\":\"Invalid competition ID format\"" + "}");
+        }
+        String url = apiBaseUrl + "/competitions/" + id + "/scorers";
+        if (limit != null) {
+            url += "?limit=" + limit;
+        }
+        return proxyRequest(url, headers);
+    }
+
     private ResponseEntity<String> proxyRequest(String url, HttpHeaders incomingHeaders) {
         HttpHeaders requestHeaders = new HttpHeaders();
         
