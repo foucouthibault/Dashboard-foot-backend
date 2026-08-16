@@ -114,7 +114,7 @@ class CompetitionProxyControllerTest {
     @Test
     void testProxyStandings_whenInvalidId_returnsBadRequest() {
         String invalidId = "PL<script>";
-        ResponseEntity<String> response = controller.proxyStandings(invalidId, headers);
+        ResponseEntity<String> response = controller.proxyStandings(invalidId, null, headers);
         
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         if (response.getBody() != null) {
@@ -137,11 +137,33 @@ class CompetitionProxyControllerTest {
             eq(String.class)
         )).thenReturn(mockEntity);
 
-        ResponseEntity<String> response = controller.proxyStandings(validId, headers);
+        ResponseEntity<String> response = controller.proxyStandings(validId, null, headers);
         
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals(mockResponse, response.getBody());
         assertEquals(MediaType.APPLICATION_JSON, response.getHeaders().getContentType());
+    }
+
+    @Test
+    void testProxyStandings_whenValidIdWithSeason_returnsData() {
+        String validId = "FL1";
+        String season = "2023";
+        String expectedUrl = "https://api.football-data.org/v4/competitions/FL1/standings?season=2023";
+        String mockResponse = "{\"standings\":[{\"position\":1}],\"season\":\"2023\"}";
+        
+        ResponseEntity<String> mockEntity = new ResponseEntity<>(mockResponse, HttpStatus.OK);
+        
+        when(restTemplate.exchange(
+            eq(URI.create(expectedUrl)),
+            eq(HttpMethod.GET),
+            any(HttpEntity.class),
+            eq(String.class)
+        )).thenReturn(mockEntity);
+
+        ResponseEntity<String> response = controller.proxyStandings(validId, season, headers);
+        
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(mockResponse, response.getBody());
     }
 
     // ==================== Tests pour /matches ====================

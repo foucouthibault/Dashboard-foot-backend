@@ -56,14 +56,18 @@ public class CompetitionProxyController {
     }
 
     @GetMapping("/{id}/standings")
-    @Cacheable(value = "footballData", key = "'standings_' + #id")
+    @Cacheable(value = "footballData", key = "'standings_' + #id + '_' + #season")
     public ResponseEntity<String> proxyStandings(@PathVariable String id, 
+                                                 @RequestParam(required = false) String season,
                                                  @RequestHeader(required = false) HttpHeaders headers) {
         if (isValidId(id)) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body("{" + "\"error\":\"Invalid competition ID format\"" + "}");
         }
         String url = apiBaseUrl + "/competitions/" + id + "/standings";
+        if (season != null && !season.isEmpty()) {
+            url += "?season=" + season;
+        }
         return proxyRequest(url, headers);
     }
 
