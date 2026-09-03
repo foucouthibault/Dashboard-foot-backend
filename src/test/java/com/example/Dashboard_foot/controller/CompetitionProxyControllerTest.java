@@ -302,6 +302,28 @@ class CompetitionProxyControllerTest {
         assertEquals(mockResponse, response.getBody());
     }
 
+    @Test
+    void testProxyScorers_whenApiRejectsSeason_propagatesUpstreamStatus() {
+        String validId = "FL1";
+        String season = "2026";
+        String expectedUrl = "https://api.football-data.org/v4/competitions/FL1/scorers?season=2026";
+        String upstreamError = "{\"message\":\"The season 2026 is restricted for your subscription.\"}";
+
+        when(restTemplate.exchange(
+            eq(URI.create(expectedUrl)),
+            eq(HttpMethod.GET),
+            any(HttpEntity.class),
+            eq(String.class)
+        )).thenThrow(org.springframework.web.client.HttpClientErrorException.create(
+            HttpStatus.FORBIDDEN, "Forbidden", HttpHeaders.EMPTY,
+            upstreamError.getBytes(java.nio.charset.StandardCharsets.UTF_8), null));
+
+        ResponseEntity<String> response = controller.proxyScorers(validId, null, season, headers);
+
+        assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
+        assertEquals(upstreamError, response.getBody());
+    }
+
     // ==================== Tests d'erreur ====================
 
     @Test
