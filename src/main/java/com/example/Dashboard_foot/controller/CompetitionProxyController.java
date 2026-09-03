@@ -1,9 +1,12 @@
 package com.example.Dashboard_foot.controller;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestTemplate;
 
 import java.net.URI;
@@ -12,6 +15,8 @@ import java.net.URISyntaxException;
 @RestController
 @RequestMapping("/api/competitions")
 public class CompetitionProxyController {
+
+    private static final Logger log = LoggerFactory.getLogger(CompetitionProxyController.class);
 
     private final RestTemplate restTemplate;
     
@@ -84,17 +89,25 @@ public class CompetitionProxyController {
     }
 
     @GetMapping("/{id}/scorers")
-    @Cacheable(value = "footballData", key = "'scorers_' + #id + '_' + #limit")
-    public ResponseEntity<String> proxyScorers(@PathVariable String id, 
+    @Cacheable(value = "footballData", key = "'scorers_' + #id + '_' + #limit + '_' + #season")
+    public ResponseEntity<String> proxyScorers(@PathVariable String id,
                                               @RequestParam(required = false) Integer limit,
+                                              @RequestParam(required = false) String season,
                                               @RequestHeader(required = false) HttpHeaders headers) {
         if (isValidId(id)) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body("{" + "\"error\":\"Invalid competition ID format\"" + "}");
         }
         String url = apiBaseUrl + "/competitions/" + id + "/scorers";
+        java.util.List<String> queryParams = new java.util.ArrayList<>();
         if (limit != null) {
-            url += "?limit=" + limit;
+            queryParams.add("limit=" + limit);
+        }
+        if (season != null && !season.isEmpty()) {
+            queryParams.add("season=" + season);
+        }
+        if (!queryParams.isEmpty()) {
+            url += "?" + String.join("&", queryParams);
         }
         return proxyRequest(url, headers);
     }
@@ -142,7 +155,16 @@ public class CompetitionProxyController {
             responseHeaders.setContentType(MediaType.APPLICATION_JSON);
             
             return new ResponseEntity<>(response.getBody(), responseHeaders, response.getStatusCode());
+        } catch (HttpStatusCodeException e) {
+            // L'API football-data.org a répondu avec un statut d'erreur (saison hors plan,
+            // quota atteint, etc.) : on transmet ce statut et son message plutôt que de le
+            // masquer derrière un 502 générique.
+            log.warn("football-data.org a répondu {} pour {}: {}", e.getStatusCode(), url, e.getResponseBodyAsString());
+            return ResponseEntity.status(e.getStatusCode())
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(e.getResponseBodyAsString());
         } catch (Exception e) {
+            log.warn("Échec de l'appel à {}", url, e);
             return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
                 .body("{" + "\"error\":\"Failed to fetch data from API\"" + "}");
         }

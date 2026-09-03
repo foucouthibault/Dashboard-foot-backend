@@ -205,8 +205,8 @@ class CompetitionProxyControllerTest {
     @Test
     void testProxyScorers_whenInvalidId_returnsBadRequest() {
         String invalidId = "PL<script>";
-        ResponseEntity<String> response = controller.proxyScorers(invalidId, null, headers);
-        
+        ResponseEntity<String> response = controller.proxyScorers(invalidId, null, null, headers);
+
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         if (response.getBody() != null) {
             assertTrue(response.getBody().contains("Invalid competition ID format"));
@@ -218,9 +218,9 @@ class CompetitionProxyControllerTest {
         String validId = "PL";
         String expectedUrl = "https://api.football-data.org/v4/competitions/PL/scorers";
         String mockResponse = "{\"scorers\":[{\"player\":{\"name\":\"Player 1\"},\"goals\":10}]}";
-        
+
         ResponseEntity<String> mockEntity = new ResponseEntity<>(mockResponse, HttpStatus.OK);
-        
+
         when(restTemplate.exchange(
             eq(URI.create(expectedUrl)),
             eq(HttpMethod.GET),
@@ -228,8 +228,8 @@ class CompetitionProxyControllerTest {
             eq(String.class)
         )).thenReturn(mockEntity);
 
-        ResponseEntity<String> response = controller.proxyScorers(validId, null, headers);
-        
+        ResponseEntity<String> response = controller.proxyScorers(validId, null, null, headers);
+
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals(mockResponse, response.getBody());
         assertEquals(MediaType.APPLICATION_JSON, response.getHeaders().getContentType());
@@ -241,9 +241,9 @@ class CompetitionProxyControllerTest {
         Integer limit = 10;
         String expectedUrl = "https://api.football-data.org/v4/competitions/FL1/scorers?limit=10";
         String mockResponse = "{\"scorers\":[{\"player\":{\"name\":\"Player 1\"},\"goals\":15}]}";
-        
+
         ResponseEntity<String> mockEntity = new ResponseEntity<>(mockResponse, HttpStatus.OK);
-        
+
         when(restTemplate.exchange(
             eq(URI.create(expectedUrl)),
             eq(HttpMethod.GET),
@@ -251,10 +251,77 @@ class CompetitionProxyControllerTest {
             eq(String.class)
         )).thenReturn(mockEntity);
 
-        ResponseEntity<String> response = controller.proxyScorers(validId, limit, headers);
-        
+        ResponseEntity<String> response = controller.proxyScorers(validId, limit, null, headers);
+
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals(mockResponse, response.getBody());
+    }
+
+    @Test
+    void testProxyScorers_whenValidIdWithSeason_returnsData() {
+        String validId = "FL1";
+        String season = "2023";
+        String expectedUrl = "https://api.football-data.org/v4/competitions/FL1/scorers?season=2023";
+        String mockResponse = "{\"scorers\":[{\"player\":{\"name\":\"Player 1\"},\"goals\":15}],\"season\":\"2023\"}";
+
+        ResponseEntity<String> mockEntity = new ResponseEntity<>(mockResponse, HttpStatus.OK);
+
+        when(restTemplate.exchange(
+            eq(URI.create(expectedUrl)),
+            eq(HttpMethod.GET),
+            any(HttpEntity.class),
+            eq(String.class)
+        )).thenReturn(mockEntity);
+
+        ResponseEntity<String> response = controller.proxyScorers(validId, null, season, headers);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(mockResponse, response.getBody());
+    }
+
+    @Test
+    void testProxyScorers_whenValidIdWithLimitAndSeason_returnsData() {
+        String validId = "FL1";
+        Integer limit = 10;
+        String season = "2023";
+        String expectedUrl = "https://api.football-data.org/v4/competitions/FL1/scorers?limit=10&season=2023";
+        String mockResponse = "{\"scorers\":[{\"player\":{\"name\":\"Player 1\"},\"goals\":15}],\"season\":\"2023\"}";
+
+        ResponseEntity<String> mockEntity = new ResponseEntity<>(mockResponse, HttpStatus.OK);
+
+        when(restTemplate.exchange(
+            eq(URI.create(expectedUrl)),
+            eq(HttpMethod.GET),
+            any(HttpEntity.class),
+            eq(String.class)
+        )).thenReturn(mockEntity);
+
+        ResponseEntity<String> response = controller.proxyScorers(validId, limit, season, headers);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(mockResponse, response.getBody());
+    }
+
+    @Test
+    void testProxyScorers_whenApiRejectsSeason_propagatesUpstreamStatus() {
+        String validId = "FL1";
+        String season = "2026";
+        String expectedUrl = "https://api.football-data.org/v4/competitions/FL1/scorers?season=2026";
+        String upstreamError = "{\"message\":\"The season 2026 is restricted for your subscription.\"}";
+
+        when(restTemplate.exchange(
+            eq(URI.create(expectedUrl)),
+            eq(HttpMethod.GET),
+            any(HttpEntity.class),
+            eq(String.class)
+        )).thenThrow(org.springframework.web.client.HttpClientErrorException.create(
+            HttpStatus.FORBIDDEN, "Forbidden", HttpHeaders.EMPTY,
+            upstreamError.getBytes(java.nio.charset.StandardCharsets.UTF_8), null));
+
+        ResponseEntity<String> response = controller.proxyScorers(validId, null, season, headers);
+
+        assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
+        assertEquals(upstreamError, response.getBody());
     }
 
     // ==================== Tests d'erreur ====================
