@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.*;
 public class CompetitionProxyController {
 
     private static final String VALID_ID_PATTERN = "^[a-zA-Z0-9_-]+$";
+    private static final String VALID_SEASON_PATTERN = "^\\d{4}$";
 
     private final FootballDataProxyService footballDataProxyService;
 
@@ -22,9 +23,18 @@ public class CompetitionProxyController {
         return id == null || !id.matches(VALID_ID_PATTERN);
     }
 
+    private boolean isInvalidSeason(String season) {
+        return season != null && !season.isEmpty() && !season.matches(VALID_SEASON_PATTERN);
+    }
+
     private ResponseEntity<String> invalidIdResponse() {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
             .body("{" + "\"error\":\"Invalid competition ID format\"" + "}");
+    }
+
+    private ResponseEntity<String> invalidSeasonResponse() {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+            .body("{" + "\"error\":\"Invalid season format\"" + "}");
     }
 
     @GetMapping("/{id}")
@@ -42,6 +52,9 @@ public class CompetitionProxyController {
                                                  @RequestHeader(required = false) HttpHeaders headers) {
         if (isValidId(id)) {
             return invalidIdResponse();
+        }
+        if (isInvalidSeason(season)) {
+            return invalidSeasonResponse();
         }
         return footballDataProxyService.getStandings(id, season, headers);
     }
@@ -62,6 +75,9 @@ public class CompetitionProxyController {
                                               @RequestHeader(required = false) HttpHeaders headers) {
         if (isValidId(id)) {
             return invalidIdResponse();
+        }
+        if (isInvalidSeason(season)) {
+            return invalidSeasonResponse();
         }
         return footballDataProxyService.getScorers(id, limit, season, headers);
     }

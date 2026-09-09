@@ -10,6 +10,7 @@ import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.util.UriComponentsBuilder;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ArrayNode;
@@ -18,6 +19,7 @@ import tools.jackson.databind.node.ObjectNode;
 import java.net.URI;
 import java.time.Year;
 import java.util.Collections;
+import java.util.Optional;
 
 /**
  * Centralise l'appel à football-data.org : limitation de débit, cache différencié
@@ -60,10 +62,11 @@ public class FootballDataProxyService {
     }
 
     public ResponseEntity<String> getStandings(String id, String season, HttpHeaders headers) {
-        String url = apiBaseUrl + "/competitions/" + id + "/standings";
-        if (season != null && !season.isEmpty()) {
-            url += "?season=" + season;
-        }
+        String url = UriComponentsBuilder.fromUriString(apiBaseUrl + "/competitions/" + id + "/standings")
+            .queryParamIfPresent("season", seasonParam(season))
+            .build()
+            .encode()
+            .toUriString();
         String cacheName = isHistoricalSeason(season) ? CacheConfig.HISTORICAL_SEASON_CACHE : CacheConfig.CURRENT_SEASON_CACHE;
         String cacheKey = "standings_" + id + "_" + normalizeSeason(season);
         return cached(cacheName, cacheKey, url, headers);
@@ -75,14 +78,20 @@ public class FootballDataProxyService {
     }
 
     public ResponseEntity<String> getScorers(String id, Integer limit, String season, HttpHeaders headers) {
-        String url = apiBaseUrl + "/competitions/" + id + "/scorers?limit=" + SCORERS_MAX_LIMIT;
-        if (season != null && !season.isEmpty()) {
-            url += "&season=" + season;
-        }
+        String url = UriComponentsBuilder.fromUriString(apiBaseUrl + "/competitions/" + id + "/scorers")
+            .queryParam("limit", SCORERS_MAX_LIMIT)
+            .queryParamIfPresent("season", seasonParam(season))
+            .build()
+            .encode()
+            .toUriString();
         String cacheName = isHistoricalSeason(season) ? CacheConfig.HISTORICAL_SEASON_CACHE : CacheConfig.CURRENT_SEASON_CACHE;
         String cacheKey = "scorers_" + id + "_" + normalizeSeason(season);
         ResponseEntity<String> full = cached(cacheName, cacheKey, url, headers);
         return trimScorers(full, limit);
+    }
+
+    private Optional<String> seasonParam(String season) {
+        return Optional.ofNullable(season).filter(s -> !s.isEmpty());
     }
 
     private String normalizeSeason(String season) {
@@ -161,15 +170,18 @@ public class FootballDataProxyService {
                     responseHeaders.put(headerName, values);
                 }
             });
-            responseHeaders.setContentType(MediaType.APPLICATION_JSON);
+            if (responseHeaders.getContentType() == null) {
+                responseHeaders.setContentType(MediaType.APPLICATION_JSON);
+            }
 
             return new ResponseEntity<>(response.getBody(), responseHeaders, response.getStatusCode());
         } catch (HttpStatusCodeException e) {
             // L'API a répondu avec un statut d'erreur (saison hors plan, quota atteint...) :
             // on transmet ce statut et son message plutôt que de le masquer en 502 générique.
             log.warn("football-data.org a répondu {} pour {}: {}", e.getStatusCode(), url, e.getResponseBodyAsString());
+            MediaType upstreamContentType = e.getResponseHeaders() != null ? e.getResponseHeaders().getContentType() : null;
             return ResponseEntity.status(e.getStatusCode())
-                .contentType(MediaType.APPLICATION_JSON)
+                .contentType(upstreamContentType != null ? upstreamContentType : MediaType.APPLICATION_JSON)
                 .body(e.getResponseBodyAsString());
         } catch (Exception e) {
             log.warn("Échec de l'appel à {}", url, e);
