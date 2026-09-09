@@ -162,6 +162,11 @@ public class FootballDataProxyService {
         HttpEntity<String> entity = new HttpEntity<>(requestHeaders);
 
         try {
+            // codeql[java/ssrf] apiBaseUrl (host) is a fixed server-side config value, never derived
+            // from the request. The only tainted inputs reaching `url` are `id` (validated against
+            // VALID_ID_PATTERN in the controller) and `season` (validated against VALID_SEASON_PATTERN),
+            // both of which exclude '/', ':' and '@', so they cannot escape the path/query and redirect
+            // the request to a different host.
             ResponseEntity<String> response = restTemplate.exchange(URI.create(url), HttpMethod.GET, entity, String.class);
 
             HttpHeaders responseHeaders = new HttpHeaders();
