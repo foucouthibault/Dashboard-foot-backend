@@ -162,13 +162,14 @@ public class FootballDataProxyService {
         HttpEntity<String> entity = new HttpEntity<>(requestHeaders);
 
         try {
-            // apiBaseUrl (host) is a fixed server-side config value, never derived from the
-            // request. The only tainted inputs reaching `url` are `id` (validated against
-            // VALID_ID_PATTERN in the controller) and `season` (validated against
-            // VALID_SEASON_PATTERN), both of which exclude '/', ':' and '@', so they cannot
-            // escape the path/query and redirect the request to a different host.
-            // codeql[java/ssrf]
-            ResponseEntity<String> response = restTemplate.exchange(URI.create(url), HttpMethod.GET, entity, String.class);
+            URI targetUri = URI.create(url);
+            if (!isAllowedApiUri(targetUri)) {
+                log.warn("URL sortante refusée (contrôle SSRF): {}", url);
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body("{\"error\":\"Invalid upstream URL\"}");
+            }
+            ResponseEntity<String> response = restTemplate.exchange(targetUri, HttpMethod.GET, entity, String.class);
 
             HttpHeaders responseHeaders = new HttpHeaders();
             response.getHeaders().forEach((headerName, values) -> {
@@ -194,6 +195,41 @@ public class FootballDataProxyService {
             return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
                 .body("{\"error\":\"Failed to fetch data from API\"}");
         }
+    }
+
+    private boolean isAllowedApiUri(URI targetUri) {
+        try {
+            URI baseUri = URI.create(apiBaseUrl);
+            String targetScheme = targetUri.getScheme();
+            String baseScheme = baseUri.getScheme();
+            if (targetScheme == null || baseScheme == null) {
+                return false;
+            }
+            if (!(targetScheme.equalsIgnoreCase("http") || targetScheme.equalsIgnoreCase("https"))) {
+                return false;
+            }
+            if (!targetScheme.equalsIgnoreCase(baseScheme)) {
+                return false;
+            }
+            String targetHost = targetUri.getHost();
+            String baseHost = baseUri.getHost();
+            if (targetHost == null || baseHost == null) {
+                return false;
+            }
+            if (!targetHost.equalsIgnoreCase(baseHost)) {
+                return false;
+            }
+            return effectivePort(targetUri) == effectivePort(baseUri);
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    private int effectivePort(URI uri) {
+        if (uri.getPort() != -1) {
+            return uri.getPort();
+        }
+        return "https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80;
     }
 
     private ResponseEntity<String> trimScorers(ResponseEntity<String> response, Integer limit) {
