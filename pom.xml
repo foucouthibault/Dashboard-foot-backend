@@ -28,6 +28,9 @@
 	</scm>
 	<properties>
 		<java.version>25</java.version>
+		<!-- Corrige 3 CVE critiques (auth bypass) tant que spring-boot-starter-parent
+		     n'a pas de version stable managant tomcat-embed-core >= 11.0.25 -->
+		<tomcat.version>11.0.25</tomcat.version>
 	</properties>
 	<dependencies>
 		<dependency>
