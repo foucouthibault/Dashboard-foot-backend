@@ -1,6 +1,6 @@
-package com.example.Dashboard_foot.service;
+package fr.foucouthibault.dashboardfoot.service;
 
-import com.example.Dashboard_foot.config.CacheConfig;
+import fr.foucouthibault.dashboardfoot.config.CacheConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;

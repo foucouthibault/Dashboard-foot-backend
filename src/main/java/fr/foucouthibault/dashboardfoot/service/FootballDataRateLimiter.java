@@ -1,4 +1,4 @@
-package com.example.Dashboard_foot.service;
+package fr.foucouthibault.dashboardfoot.service;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;

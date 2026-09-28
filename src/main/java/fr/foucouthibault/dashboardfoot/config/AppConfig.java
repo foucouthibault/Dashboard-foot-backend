@@ -1,4 +1,4 @@
-package com.example.Dashboard_foot.config;
+package fr.foucouthibault.dashboardfoot.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

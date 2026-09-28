@@ -1,6 +1,6 @@
-package com.example.Dashboard_foot.controller;
+package fr.foucouthibault.dashboardfoot.controller;
 
-import com.example.Dashboard_foot.service.FootballDataProxyService;
+import fr.foucouthibault.dashboardfoot.service.FootballDataProxyService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

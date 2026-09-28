@@ -1,4 +1,4 @@
-package com.example.Dashboard_foot;
+package fr.foucouthibault.dashboardfoot;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
