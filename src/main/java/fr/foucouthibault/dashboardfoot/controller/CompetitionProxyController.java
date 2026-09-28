@@ -1,6 +1,6 @@
-package com.example.Dashboard_foot.controller;
+package fr.foucouthibault.dashboardfoot.controller;
 
-import com.example.Dashboard_foot.service.FootballDataProxyService;
+import fr.foucouthibault.dashboardfoot.service.FootballDataProxyService;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;

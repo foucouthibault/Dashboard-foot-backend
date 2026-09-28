@@ -8,14 +8,17 @@
 		<version>4.1.1</version>
 		<relativePath/> <!-- lookup parent from repository -->
 	</parent>
-	<groupId>com.example</groupId>
-	<artifactId>Dashboard-foot</artifactId>
+	<groupId>fr.foucouthibault</groupId>
+	<artifactId>dashboard-foot-backend</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
-	<name/>
-	<description/>
-	<url/>
+	<name>Dashboard Foot Backend</name>
+	<description>Proxy Spring Boot vers football-data.org avec cache et limite de débit</description>
+	<url>https://github.com/foucouthibault/Dashboard-foot-backend</url>
 	<licenses>
-		<license/>
+		<license>
+			<name>MIT License</name>
+			<url>https://opensource.org/licenses/MIT</url>
+		</license>
 	</licenses>
 	<developers>
 		<developer/>

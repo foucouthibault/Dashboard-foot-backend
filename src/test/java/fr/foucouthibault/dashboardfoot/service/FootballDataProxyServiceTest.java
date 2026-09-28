@@ -1,6 +1,6 @@
-package com.example.Dashboard_foot.service;
+package fr.foucouthibault.dashboardfoot.service;
 
-import com.example.Dashboard_foot.config.CacheConfig;
+import fr.foucouthibault.dashboardfoot.config.CacheConfig;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

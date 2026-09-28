@@ -1,4 +1,4 @@
-package com.example.Dashboard_foot.config;
+package fr.foucouthibault.dashboardfoot.config;
 
 import com.github.benmanes.caffeine.cache.Caffeine;
 import org.springframework.beans.factory.annotation.Value;

@@ -1,4 +1,4 @@
-package com.example.Dashboard_foot.service;
+package fr.foucouthibault.dashboardfoot.service;
 
 import org.junit.jupiter.api.Test;
 

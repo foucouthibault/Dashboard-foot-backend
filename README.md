@@ -5,6 +5,7 @@ API Spring Boot qui relaie [football-data.org](https://www.football-data.org/) p
 [![Java CI with Maven](https://github.com/foucouthibault/Dashboard-foot-backend/actions/workflows/maven.yml/badge.svg)](https://github.com/foucouthibault/Dashboard-foot-backend/actions/workflows/maven.yml)
 ![Java](https://img.shields.io/badge/Java-25-f89820?logo=openjdk)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.1-6db33f?logo=springboot)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
 ## Architecture
 
@@ -108,7 +109,7 @@ La CI GitHub Actions compile le projet et lance les tests à chaque push et chaq
 ## Structure du projet
 
 ```
-src/main/java/com/example/Dashboard_foot/
+src/main/java/fr/foucouthibault/dashboardfoot/
 ├── config/
 │   ├── AppConfig.java                  # RestTemplate
 │   └── CacheConfig.java                # Les trois caches Caffeine
@@ -125,3 +126,7 @@ src/main/java/com/example/Dashboard_foot/
 - **Saison terminée ou en cours ?** Le calcul se fait à partir de l'année civile, donc il est approximatif en juillet-août. Au pire, une saison encore active reste en cache un peu plus longtemps que nécessaire.
 - **Pas de modèle de données.** Les réponses sont transmises en JSON brut. Pistes : des objets de réponse typés et une documentation OpenAPI.
 - **Pas de configuration CORS.** Le frontend passe aujourd'hui par le proxy Vite. Pour un déploiement sur deux domaines différents, il faudra autoriser l'origine du frontend.
+
+## Licence
+
+[MIT](./LICENSE)
