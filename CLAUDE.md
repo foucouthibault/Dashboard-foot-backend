@@ -49,6 +49,16 @@ de football-data.org tel quel. Les types côté frontend sont dans
 `../Dashboard-foot/src/types/index.ts`. Une fonctionnalité qui change une route ou un
 paramètre se fait avec une branche dans chaque dépôt et deux PR qui se référencent.
 
+## Travailler à partir d'une issue
+
+- Les tâches sont des issues GitHub (`gh issue list`), une par PR, avec des critères de fin.
+  Étiquettes : `qualite`, `deploiement`, `tests`, `refacto`, `outillage`,
+  `fonctionnalite` (optionnel), `vitrine` (présentation du projet, en pause).
+- Avant de commencer : lire l'issue (`gh issue view <n>`) et vérifier que ses dépendances
+  sont fermées.
+- La PR reprend les critères de fin cochés et contient `Closes #<n>` pour fermer l'issue
+  au merge. Un critère non rempli est signalé dans la PR, pas coché.
+
 ## Conventions
 
 - Code, commentaires, messages de log, commits et PR en **français**.
