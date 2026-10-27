@@ -54,8 +54,14 @@ paramètre se fait avec une branche dans chaque dépôt et deux PR qui se réfé
 - Les tâches sont des issues GitHub (`gh issue list`), une par PR, avec des critères de fin.
   Étiquettes : `qualite`, `deploiement`, `tests`, `refacto`, `outillage`,
   `fonctionnalite` (optionnel), `vitrine` (présentation du projet, en pause).
-- Avant de commencer : lire l'issue (`gh issue view <n>`) et vérifier que ses dépendances
-  sont fermées.
+- Ordre de traitement : les issues sont rangées dans des jalons numérotés
+  (« 1 – Filet de sécurité », « 2 – Backend propre », « 3 – Mise en ligne »…), à traiter
+  dans l'ordre. La prochaine tâche est une issue ouverte du plus petit jalon qui n'est
+  bloquée par aucune autre : `gh issue list --milestone "<titre>"`. Les jalons « optionnel »
+  et « en pause » ne se traitent que sur demande.
+- Avant de commencer : lire l'issue (`gh issue view <n>`) et vérifier qu'aucune issue ne la
+  bloque encore (liens « bloqué par » de GitHub, y compris vers l'autre dépôt :
+  `gh api repos/foucouthibault/<dépôt>/issues/<n>/dependencies/blocked_by`).
 - La PR reprend les critères de fin cochés et contient `Closes #<n>` pour fermer l'issue
   au merge. Un critère non rempli est signalé dans la PR, pas coché.
 
