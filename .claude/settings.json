@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(./mvnw test)",
+      "Bash(./mvnw test *)",
+      "Bash(./mvnw verify)",
+      "Bash(./mvnw verify *)",
+      "Bash(./mvnw compile)",
+      "Bash(./mvnw compile *)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(git branch)",
+      "Bash(git branch --show-current)",
+      "Bash(git branch -a)",
+      "Bash(git branch -vv)",
+      "Bash(git fetch*)",
+      "Bash(gh pr view *)",
+      "Bash(gh pr diff *)",
+      "Bash(gh pr checks *)",
+      "Bash(gh pr list*)",
+      "Bash(gh run view *)",
+      "Bash(gh run list*)",
+      "Bash(gh issue view *)",
+      "Bash(gh issue list*)",
+      "Bash(curl -s https://sonarcloud.io/api/*)",
+      "Bash(curl -s \"https://sonarcloud.io/api/*)",
+      "WebFetch(domain:sonarcloud.io)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.local)",
+      "Read(./.env.*.local)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git push origin main*)",
+      "Bash(git push * main)"
+    ]
+  }
+}
