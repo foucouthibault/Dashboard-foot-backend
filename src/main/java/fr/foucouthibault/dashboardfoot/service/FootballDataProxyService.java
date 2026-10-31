@@ -20,6 +20,7 @@ import java.net.URI;
 import java.time.Year;
 import java.util.Collections;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 /**
  * Centralise l'appel à football-data.org : limitation de débit, cache différencié
@@ -37,6 +38,8 @@ public class FootballDataProxyService {
     // ensuite localement selon le `limit` demandé par le client, pour qu'un changement
     // de `limit` côté frontend ne déclenche jamais un nouvel appel amont.
     private static final int SCORERS_MAX_LIMIT = 50;
+
+    private static final Pattern CONTROL_CHARACTERS = Pattern.compile("\\p{Cntrl}");
 
     private final RestTemplate restTemplate;
     private final CacheManager cacheManager;
@@ -139,7 +142,7 @@ public class FootballDataProxyService {
     private ResponseEntity<String> fetch(String url, HttpHeaders incomingHeaders) {
         if (!rateLimiter.tryAcquire()) {
             long retryAfter = rateLimiter.secondsUntilNextSlot();
-            log.warn("Quota interne d'appels à football-data.org atteint, requête refusée ({}s avant réessai) pour {}", retryAfter, url);
+            log.warn("Quota interne d'appels à football-data.org atteint, requête refusée ({}s avant réessai) pour {}", retryAfter, forLog(url));
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                 .header("Retry-After", String.valueOf(retryAfter))
                 .contentType(MediaType.APPLICATION_JSON)
@@ -164,7 +167,7 @@ public class FootballDataProxyService {
         try {
             URI targetUri = URI.create(url);
             if (!isAllowedApiUri(targetUri)) {
-                log.warn("URL sortante refusée (contrôle SSRF): {}", url);
+                log.warn("URL sortante refusée (contrôle SSRF): {}", forLog(url));
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .contentType(MediaType.APPLICATION_JSON)
                     .body("{\"error\":\"Invalid upstream URL\"}");
@@ -185,16 +188,27 @@ public class FootballDataProxyService {
         } catch (HttpStatusCodeException e) {
             // L'API a répondu avec un statut d'erreur (saison hors plan, quota atteint...) :
             // on transmet ce statut et son message plutôt que de le masquer en 502 générique.
-            log.warn("football-data.org a répondu {} pour {}: {}", e.getStatusCode(), url, e.getResponseBodyAsString());
+            log.warn("football-data.org a répondu {} pour {}: {}", e.getStatusCode(), forLog(url), forLog(e.getResponseBodyAsString()));
             MediaType upstreamContentType = e.getResponseHeaders() != null ? e.getResponseHeaders().getContentType() : null;
             return ResponseEntity.status(e.getStatusCode())
                 .contentType(upstreamContentType != null ? upstreamContentType : MediaType.APPLICATION_JSON)
                 .body(e.getResponseBodyAsString());
         } catch (Exception e) {
-            log.warn("Échec de l'appel à {}", url, e);
+            log.warn("Échec de l'appel à {}", forLog(url), e);
             return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
                 .body("{\"error\":\"Failed to fetch data from API\"}");
         }
+    }
+
+    /**
+     * Neutralise les caractères de contrôle (retours à la ligne, tabulations, séquences
+     * d'échappement) d'une valeur venant du client ou de l'API amont avant de l'écrire dans
+     * les logs : sans cela, un `id` contenant un retour à la ligne pourrait fabriquer une
+     * fausse ligne de log. Le contrôleur rejette déjà ces `id`, mais le service ne doit pas
+     * dépendre de cette validation.
+     */
+    static String forLog(String value) {
+        return value == null ? null : CONTROL_CHARACTERS.matcher(value).replaceAll("_");
     }
 
     private boolean isAllowedApiUri(URI targetUri) {
