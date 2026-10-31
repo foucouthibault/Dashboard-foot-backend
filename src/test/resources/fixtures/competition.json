@@ -1,0 +1,9 @@
+{
+  "id": 2015,
+  "name": "Ligue 1",
+  "code": "FL1",
+  "type": "LEAGUE",
+  "emblem": "https://crests.football-data.org/FL1.png",
+  "area": {"id": 2081, "name": "France", "code": "FRA", "flag": "https://crests.football-data.org/773.svg"},
+  "currentSeason": {"id": 2287, "startDate": "2025-08-15", "endDate": "2026-05-17", "currentMatchday": 10, "winner": null}
+}

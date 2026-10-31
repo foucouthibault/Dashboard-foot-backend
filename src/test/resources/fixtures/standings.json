@@ -1,0 +1,17 @@
+{
+  "competition": {"id": 2015, "name": "Ligue 1", "code": "FL1", "type": "LEAGUE", "emblem": "https://crests.football-data.org/FL1.png"},
+  "season": {"id": 2287, "startDate": "2025-08-15", "endDate": "2026-05-17", "currentMatchday": 10},
+  "standings": [
+    {
+      "stage": "REGULAR_SEASON",
+      "type": "TOTAL",
+      "group": null,
+      "table": [
+        {"position": 1, "team": {"id": 524, "name": "Paris Saint-Germain FC", "shortName": "PSG", "tla": "PSG", "crest": "https://crests.football-data.org/524.png"},
+         "playedGames": 10, "form": "W,W,D,W,W", "won": 8, "draw": 1, "lost": 1, "points": 25, "goalsFor": 25, "goalsAgainst": 8, "goalDifference": 17},
+        {"position": 2, "team": {"id": 516, "name": "Olympique de Marseille", "shortName": "Marseille", "tla": "OM", "crest": "https://crests.football-data.org/516.png"},
+         "playedGames": 10, "form": "W,L,W,W,D", "won": 7, "draw": 1, "lost": 2, "points": 22, "goalsFor": 20, "goalsAgainst": 10, "goalDifference": 10}
+      ]
+    }
+  ]
+}

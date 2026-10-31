@@ -1,0 +1,32 @@
+{
+  "count": 8,
+  "filters": {"season": "2025", "limit": 50},
+  "competition": {"id": 2015, "name": "Ligue 1", "code": "FL1", "type": "LEAGUE", "emblem": "https://crests.football-data.org/FL1.png"},
+  "season": {"id": 2287, "startDate": "2025-08-15", "endDate": "2026-05-17", "currentMatchday": 10},
+  "scorers": [
+    {"player": {"id": 1000, "name": "Joueur 0", "firstName": "Joueur", "lastName": "0", "nationality": "France", "section": "Offence", "position": "Centre-Forward", "dateOfBirth": "1999-01-01"},
+     "team": {"id": 524, "name": "Paris Saint-Germain FC", "shortName": "PSG", "tla": "PSG", "crest": "https://crests.football-data.org/524.png"},
+     "playedMatches": 10, "goals": 12, "assists": 3, "penalties": 2},
+    {"player": {"id": 1001, "name": "Joueur 1", "firstName": "Joueur", "lastName": "1", "nationality": "France", "section": "Offence", "position": "Left Winger", "dateOfBirth": "2000-02-02"},
+     "team": {"id": 516, "name": "Olympique de Marseille", "shortName": "Marseille", "tla": "OM", "crest": "https://crests.football-data.org/516.png"},
+     "playedMatches": 10, "goals": 11, "assists": 4, "penalties": 1},
+    {"player": {"id": 1002, "name": "Joueur 2", "firstName": "Joueur", "lastName": "2", "nationality": "Portugal", "section": "Offence", "position": "Centre-Forward", "dateOfBirth": "1998-03-03"},
+     "team": {"id": 524, "name": "Paris Saint-Germain FC", "shortName": "PSG", "tla": "PSG", "crest": "https://crests.football-data.org/524.png"},
+     "playedMatches": 9, "goals": 10, "assists": 1, "penalties": null},
+    {"player": {"id": 1003, "name": "Joueur 3", "firstName": "Joueur", "lastName": "3", "nationality": "Brazil", "section": "Midfield", "position": "Attacking Midfield", "dateOfBirth": "1997-04-04"},
+     "team": {"id": 516, "name": "Olympique de Marseille", "shortName": "Marseille", "tla": "OM", "crest": "https://crests.football-data.org/516.png"},
+     "playedMatches": 10, "goals": 9, "assists": 6, "penalties": 0},
+    {"player": {"id": 1004, "name": "Joueur 4", "firstName": "Joueur", "lastName": "4", "nationality": "Spain", "section": "Offence", "position": "Right Winger", "dateOfBirth": "2001-05-05"},
+     "team": {"id": 524, "name": "Paris Saint-Germain FC", "shortName": "PSG", "tla": "PSG", "crest": "https://crests.football-data.org/524.png"},
+     "playedMatches": 10, "goals": 8, "assists": 2, "penalties": 0},
+    {"player": {"id": 1005, "name": "Joueur 5", "firstName": "Joueur", "lastName": "5", "nationality": "France", "section": "Offence", "position": "Centre-Forward", "dateOfBirth": "1996-06-06"},
+     "team": {"id": 516, "name": "Olympique de Marseille", "shortName": "Marseille", "tla": "OM", "crest": "https://crests.football-data.org/516.png"},
+     "playedMatches": 8, "goals": 7, "assists": 0, "penalties": 3},
+    {"player": {"id": 1006, "name": "Joueur 6", "firstName": "Joueur", "lastName": "6", "nationality": "Italy", "section": "Midfield", "position": "Central Midfield", "dateOfBirth": "1995-07-07"},
+     "team": {"id": 524, "name": "Paris Saint-Germain FC", "shortName": "PSG", "tla": "PSG", "crest": "https://crests.football-data.org/524.png"},
+     "playedMatches": 10, "goals": 6, "assists": 5, "penalties": 0},
+    {"player": {"id": 1007, "name": "Joueur 7", "firstName": "Joueur", "lastName": "7", "nationality": "France", "section": "Offence", "position": "Centre-Forward", "dateOfBirth": "2002-08-08"},
+     "team": {"id": 516, "name": "Olympique de Marseille", "shortName": "Marseille", "tla": "OM", "crest": "https://crests.football-data.org/516.png"},
+     "playedMatches": 7, "goals": 5, "assists": 1, "penalties": 0}
+  ]
+}

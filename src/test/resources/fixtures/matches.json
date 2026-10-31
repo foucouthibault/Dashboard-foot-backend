@@ -1,0 +1,17 @@
+{
+  "filters": {"season": "2025"},
+  "resultSet": {"count": 2, "first": "2025-08-15", "last": "2025-08-22", "played": 1},
+  "competition": {"id": 2015, "name": "Ligue 1", "code": "FL1", "type": "LEAGUE", "emblem": "https://crests.football-data.org/FL1.png"},
+  "matches": [
+    {"id": 497410, "utcDate": "2025-08-15T18:45:00Z", "status": "FINISHED", "matchday": 1, "stage": "REGULAR_SEASON", "group": null,
+     "lastUpdated": "2025-08-16T00:00:00Z",
+     "homeTeam": {"id": 524, "name": "Paris Saint-Germain FC", "shortName": "PSG", "tla": "PSG", "crest": "https://crests.football-data.org/524.png"},
+     "awayTeam": {"id": 516, "name": "Olympique de Marseille", "shortName": "Marseille", "tla": "OM", "crest": "https://crests.football-data.org/516.png"},
+     "score": {"winner": "HOME_TEAM", "duration": "REGULAR", "fullTime": {"home": 2, "away": 1}, "halfTime": {"home": 1, "away": 0}}},
+    {"id": 497411, "utcDate": "2025-08-22T18:45:00Z", "status": "TIMED", "matchday": 2, "stage": "REGULAR_SEASON", "group": null,
+     "lastUpdated": "2025-08-16T00:00:00Z",
+     "homeTeam": {"id": 516, "name": "Olympique de Marseille", "shortName": "Marseille", "tla": "OM", "crest": "https://crests.football-data.org/516.png"},
+     "awayTeam": {"id": 524, "name": "Paris Saint-Germain FC", "shortName": "PSG", "tla": "PSG", "crest": "https://crests.football-data.org/524.png"},
+     "score": {"winner": null, "duration": "REGULAR", "fullTime": {"home": null, "away": null}, "halfTime": {"home": null, "away": null}}}
+  ]
+}
