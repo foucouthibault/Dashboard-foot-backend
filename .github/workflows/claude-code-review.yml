@@ -33,10 +33,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 1
+          # Historique complet sur un push, pour le diff before..after de l'étape « nouveaux commits »
+          fetch-depth: ${{ github.event.action == 'synchronize' && '0' || '1' }}
 
       - name: Run Claude Code Review
         id: claude-review
+        # Le plugin s'arrête dès que Claude a déjà commenté la PR : il ne sert qu'à la première revue.
+        if: github.event.action != 'synchronize'
         uses: anthropics/claude-code-action@d535f5172dec02b204866b393d6b20b9b2aaf98d # v1.0.266
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -47,3 +50,33 @@ jobs:
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://code.claude.com/docs/en/cli-reference for available options
 
+      # Sur un nouveau push, le plugin code-review ne relirait rien (il ignore les PR déjà
+      # commentées par Claude). On relit donc les seuls nouveaux commits, avec ses critères.
+      - name: Review new commits
+        if: github.event.action == 'synchronize'
+        uses: anthropics/claude-code-action@d535f5172dec02b204866b393d6b20b9b2aaf98d # v1.0.266
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Relis les commits poussés sur la PR ${{ github.repository }}#${{ github.event.pull_request.number }}
+            depuis le dernier push. La PR a déjà été relue à son ouverture : ne relis que ce qui a changé.
+
+            Diff à relire : git diff ${{ github.event.before }}..${{ github.event.after }}
+            Si le commit ${{ github.event.before }} n'existe plus (push forcé), relis plutôt
+            git diff origin/${{ github.event.pull_request.base.ref }}...${{ github.event.after }} et dis-le dans ta synthèse.
+            Lis le titre, la description et les revues précédentes avec gh pr view ${{ github.event.pull_request.number }} --comments,
+            et ne signale pas une seconde fois un problème déjà relevé. Lis les CLAUDE.md du dépôt.
+
+            Critères (les mêmes que le plugin code-review) :
+            - signale seulement les problèmes certains : code qui ne compile pas, logique fausse quelles que
+              soient les entrées, violation claire d'une règle d'un CLAUDE.md que tu cites mot pour mot ;
+            - ne signale pas : le style, les suggestions subjectives, les problèmes déjà présents avant ces
+              commits, ce qu'un linter détecte, le manque de tests sauf si un CLAUDE.md l'exige ;
+            - vérifie chaque problème dans le code avant de le signaler ; dans le doute, ne le signale pas.
+
+            Publication, en français :
+            - un commentaire en ligne par problème avec mcp__github_inline_comment__create_inline_comment (confirmed: true) ;
+            - puis un seul commentaire de synthèse, sur une seule ligne, avec
+              gh pr comment ${{ github.event.pull_request.number }} --body "..." : les SHA courts relus, puis
+              « aucun problème trouvé (bugs et CLAUDE.md vérifiés) » ou le nombre de problèmes signalés.
+          claude_args: '--allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*),mcp__github_inline_comment__create_inline_comment"'
