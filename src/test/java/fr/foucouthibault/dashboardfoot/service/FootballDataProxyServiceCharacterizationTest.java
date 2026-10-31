@@ -26,6 +26,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.Year;
 import java.time.ZoneOffset;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -50,6 +51,8 @@ import static org.mockito.Mockito.when;
 class FootballDataProxyServiceCharacterizationTest {
 
     private static final String BASE = "https://api.football-data.org/v4";
+    /** Saison terminée, calculée comme dans FootballDataProxyServiceTest. */
+    private static final String HISTORICAL_SEASON = String.valueOf(Year.now().getValue() - 5);
     private static final Clock FIXED_CLOCK =
         Clock.fixed(Instant.parse("2026-01-15T12:00:00Z"), ZoneOffset.UTC);
 
@@ -479,7 +482,7 @@ class FootballDataProxyServiceCharacterizationTest {
 
     private ResponseEntity<String> scorers(String upstreamBody, Integer limit) {
         upstreamReturns(ok(upstreamBody));
-        return service.getScorers("FL1", limit, "2023", new HttpHeaders());
+        return service.getScorers("FL1", limit, HISTORICAL_SEASON, new HttpHeaders());
     }
 
     @Test
@@ -526,7 +529,7 @@ class FootballDataProxyServiceCharacterizationTest {
         upstream.set("X-Requests-Available-Minute", "7");
         upstreamReturns(new ResponseEntity<>("{\"count\":3,\"scorers\":[1,2,3]}", upstream, HttpStatus.OK));
 
-        ResponseEntity<String> response = service.getScorers("FL1", 1, "2023", new HttpHeaders());
+        ResponseEntity<String> response = service.getScorers("FL1", 1, HISTORICAL_SEASON, new HttpHeaders());
 
         assertEquals("{\"count\":1,\"scorers\":[1]}", response.getBody());
         assertFalse(response.getHeaders().containsHeader("Content-Length"));
@@ -554,7 +557,7 @@ class FootballDataProxyServiceCharacterizationTest {
             .thenThrow(HttpClientErrorException.create(HttpStatus.FORBIDDEN, "Forbidden", new HttpHeaders(),
                 "{\"scorers\":[1,2,3]}".getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8));
 
-        ResponseEntity<String> response = service.getScorers("FL1", 1, "2023", new HttpHeaders());
+        ResponseEntity<String> response = service.getScorers("FL1", 1, HISTORICAL_SEASON, new HttpHeaders());
 
         assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
         assertEquals("{\"scorers\":[1,2,3]}", response.getBody());
@@ -564,7 +567,7 @@ class FootballDataProxyServiceCharacterizationTest {
     void scorers_nullBody_isReturnedUntrimmed() {
         upstreamReturns(new ResponseEntity<>(null, new HttpHeaders(), HttpStatus.OK));
 
-        ResponseEntity<String> response = service.getScorers("FL1", 1, "2023", new HttpHeaders());
+        ResponseEntity<String> response = service.getScorers("FL1", 1, HISTORICAL_SEASON, new HttpHeaders());
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertNull(response.getBody());

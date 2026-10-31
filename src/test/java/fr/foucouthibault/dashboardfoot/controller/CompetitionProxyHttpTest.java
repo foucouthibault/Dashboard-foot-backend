@@ -26,6 +26,7 @@ import org.springframework.web.client.RestTemplate;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.time.Year;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
@@ -56,6 +57,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class CompetitionProxyHttpTest {
 
     private static final String BASE = "https://api.football-data.org/v4";
+    /** Saison terminée, calculée comme dans FootballDataProxyServiceTest. */
+    private static final String HISTORICAL_SEASON = String.valueOf(Year.now().getValue() - 5);
+    /** En-tête Accept envoyé par défaut par axios, donc par le frontend. */
+    private static final String FRONTEND_ACCEPT = "application/json, text/plain, */*";
 
     @Autowired
     private MockMvc mockMvc;
@@ -241,26 +246,26 @@ class CompetitionProxyHttpTest {
 
     @Test
     void scorersWithSeason_forwardsTheSeasonToUpstream() throws Exception {
-        upstreamReturns(BASE + "/competitions/FL1/scorers?limit=50&season=2023", fixture("scorers.json"));
+        upstreamReturns(BASE + "/competitions/FL1/scorers?limit=50&season=" + HISTORICAL_SEASON, fixture("scorers.json"));
 
-        mockMvc.perform(get("/api/competitions/FL1/scorers").param("season", "2023"))
+        mockMvc.perform(get("/api/competitions/FL1/scorers").param("season", HISTORICAL_SEASON))
             .andExpect(status().isOk());
 
         ArgumentCaptor<URI> uri = ArgumentCaptor.forClass(URI.class);
         verify(restTemplate).exchange(uri.capture(), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class));
-        assertThat(uri.getValue().getQuery()).contains("season=2023");
+        assertThat(uri.getValue().getQuery()).contains("season=" + HISTORICAL_SEASON);
     }
 
     @Test
     void standingsWithSeason_forwardsTheSeasonToUpstream() throws Exception {
-        upstreamReturns(BASE + "/competitions/FL1/standings?season=2023", fixture("standings.json"));
+        upstreamReturns(BASE + "/competitions/FL1/standings?season=" + HISTORICAL_SEASON, fixture("standings.json"));
 
-        mockMvc.perform(get("/api/competitions/FL1/standings").param("season", "2023"))
+        mockMvc.perform(get("/api/competitions/FL1/standings").param("season", HISTORICAL_SEASON))
             .andExpect(status().isOk());
 
         ArgumentCaptor<URI> uri = ArgumentCaptor.forClass(URI.class);
         verify(restTemplate).exchange(uri.capture(), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class));
-        assertThat(uri.getValue().getQuery()).isEqualTo("season=2023");
+        assertThat(uri.getValue().getQuery()).isEqualTo("season=" + HISTORICAL_SEASON);
     }
 
     // ==================== id invalide ====================
@@ -272,6 +277,19 @@ class CompetitionProxyHttpTest {
                 .andExpect(status().isBadRequest());
         }
         verify(restTemplate, never()).exchange(any(URI.class), any(HttpMethod.class), any(HttpEntity.class), eq(String.class));
+    }
+
+    /*
+     * Les 400 du contrôleur et le 502 du service ne fixent pas de Content-Type, contrairement
+     * au 429 et aux erreurs amont : Spring le choisit d'après l'en-tête Accept du client.
+     * Caractérisation, pas jugement : #35 changera probablement ce comportement.
+     */
+    @Test
+    void invalidId_contentTypeFollowsTheClientAcceptHeader() throws Exception {
+        mockMvc.perform(get("/api/competitions/FL1$").header("Accept", FRONTEND_ACCEPT))
+            .andExpect(header().string("Content-Type", "application/json"));
+        mockMvc.perform(get("/api/competitions/FL1$"))
+            .andExpect(header().string("Content-Type", "text/plain;charset=UTF-8"));
     }
 
     @Test
@@ -296,6 +314,15 @@ class CompetitionProxyHttpTest {
         mockMvc.perform(get("/api/competitions/FL1/scorers").param("season", "20234"))
             .andExpect(status().isBadRequest());
         verify(restTemplate, never()).exchange(any(URI.class), any(HttpMethod.class), any(HttpEntity.class), eq(String.class));
+    }
+
+    @Test
+    void invalidSeason_contentTypeFollowsTheClientAcceptHeader() throws Exception {
+        mockMvc.perform(get("/api/competitions/FL1/standings").param("season", "abcd")
+                .header("Accept", FRONTEND_ACCEPT))
+            .andExpect(header().string("Content-Type", "application/json"));
+        mockMvc.perform(get("/api/competitions/FL1/standings").param("season", "abcd"))
+            .andExpect(header().string("Content-Type", "text/plain;charset=UTF-8"));
     }
 
     @Test
@@ -377,6 +404,16 @@ class CompetitionProxyHttpTest {
 
         mockMvc.perform(get("/api/competitions/FL1"))
             .andExpect(status().isBadGateway());
+    }
+
+    @Test
+    void networkFailure_contentTypeFollowsTheClientAcceptHeader() throws Exception {
+        upstreamFails(new ResourceAccessException("Connection refused"));
+
+        mockMvc.perform(get("/api/competitions/FL1").header("Accept", FRONTEND_ACCEPT))
+            .andExpect(header().string("Content-Type", "application/json"));
+        mockMvc.perform(get("/api/competitions/FL1"))
+            .andExpect(header().string("Content-Type", "text/plain;charset=UTF-8"));
     }
 
     @Test
