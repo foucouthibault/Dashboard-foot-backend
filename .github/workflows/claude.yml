@@ -29,6 +29,18 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
+          # claude-code-action configure sa propre authentification git. Les identifiants
+          # gardés par checkout v6+ (fichier chargé via includeIf) ne sont pas effacés par
+          # l'action et feraient pousser avec le GITHUB_TOKEN en lecture seule (403).
+          persist-credentials: false
+
+      # Permet à Claude de lancer ./mvnw test / verify (le projet demande Java 25)
+      - name: Set up JDK 25
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+          cache: maven
 
       - name: Run Claude Code
         id: claude
@@ -47,4 +59,6 @@ jobs:
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://code.claude.com/docs/en/cli-reference for available options
           # claude_args: '--allowed-tools Bash(gh pr *)'
+          # Maven via le wrapper : runner jetable, sans clé d'API football-data (tests sans réseau)
+          claude_args: '--allowedTools "Bash(./mvnw:*)"'
 
