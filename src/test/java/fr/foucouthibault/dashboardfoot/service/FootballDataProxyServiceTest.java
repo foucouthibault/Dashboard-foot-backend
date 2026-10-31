@@ -7,6 +7,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.cache.CacheManager;
 import org.springframework.cache.caffeine.CaffeineCacheManager;
 import org.springframework.http.*;
@@ -24,7 +26,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
-@ExtendWith(MockitoExtension.class)
+@ExtendWith({MockitoExtension.class, OutputCaptureExtension.class})
 class FootballDataProxyServiceTest {
 
     @Mock
@@ -52,9 +54,17 @@ class FootballDataProxyServiceTest {
     }
 
     private void setField(String name, String value) throws Exception {
-        Field field = FootballDataProxyService.class.getDeclaredField(name);
-        field.setAccessible(true);
-        field.set(service, value);
+        setFieldOn(service, name, value);
+    }
+
+    private static void setFieldOn(FootballDataProxyService target, String name, String value) {
+        try {
+            Field field = FootballDataProxyService.class.getDeclaredField(name);
+            field.setAccessible(true);
+            field.set(target, value);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     private static CacheManager buildCacheManager() {
@@ -178,6 +188,41 @@ class FootballDataProxyServiceTest {
         assertEquals(HttpStatus.TOO_MANY_REQUESTS, response.getStatusCode());
         assertEquals("37", response.getHeaders().getFirst("Retry-After"));
         verifyNoInteractions(restTemplate);
+    }
+
+    // ==================== Logs ====================
+
+    @Test
+    void idContainingALineBreakCannotForgeAFakeLogLine(CapturedOutput output) {
+        FootballDataRateLimiter exhausted = mock(FootballDataRateLimiter.class);
+        when(exhausted.tryAcquire()).thenReturn(false);
+        FootballDataProxyService limitedService = new FootballDataProxyService(restTemplate, cacheManager, exhausted);
+        setFieldOn(limitedService, "apiBaseUrl", "https://api.football-data.org/v4");
+
+        limitedService.getCompetition("FL1\nERROR FAUSSE LIGNE", headers);
+
+        assertTrue(output.getOut().contains("FL1_ERROR FAUSSE LIGNE"));
+        assertTrue(output.getOut().lines().noneMatch(line -> line.startsWith("ERROR FAUSSE LIGNE")));
+    }
+
+    @Test
+    void upstreamErrorBodyIsNeutralizedBeforeBeingLogged(CapturedOutput output) {
+        String url = "https://api.football-data.org/v4/competitions/FL1";
+        when(restTemplate.exchange(eq(URI.create(url)), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class)))
+            .thenThrow(HttpClientErrorException.create(HttpStatus.FORBIDDEN, "Forbidden", new HttpHeaders(),
+                "refus\r\nERROR FAUSSE LIGNE".getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8));
+
+        service.getCompetition("FL1", headers);
+
+        assertTrue(output.getOut().contains("refus__ERROR FAUSSE LIGNE"));
+        assertTrue(output.getOut().lines().noneMatch(line -> line.startsWith("ERROR FAUSSE LIGNE")));
+    }
+
+    @Test
+    void forLogReplacesEveryControlCharacter() {
+        assertEquals("a_b_c_d_e", FootballDataProxyService.forLog("a\rb\nc\td\u001Be"));
+        assertEquals("FL1", FootballDataProxyService.forLog("FL1"));
+        assertNull(FootballDataProxyService.forLog(null));
     }
 
     // ==================== Buteurs : limit et troncature ====================
