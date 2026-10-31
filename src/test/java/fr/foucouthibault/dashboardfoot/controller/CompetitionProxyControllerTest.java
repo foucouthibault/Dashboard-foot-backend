@@ -95,6 +95,56 @@ class CompetitionProxyControllerTest {
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
     }
 
+    @Test
+    void testProxyCompetition_whenIdIsNull_returnsBadRequest() {
+        ResponseEntity<String> response = controller.proxyCompetition(null, headers);
+
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        verifyNoInteractions(footballDataProxyService);
+    }
+
+    // ==================== Validation de la saison ====================
+
+    @Test
+    void testProxyStandings_whenInvalidSeason_returnsBadRequest() {
+        ResponseEntity<String> response = controller.proxyStandings("FL1", "20x3", headers);
+
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        assertTrue(response.getBody().contains("Invalid season format"));
+        verifyNoInteractions(footballDataProxyService);
+    }
+
+    @Test
+    void testProxyScorers_whenInvalidSeason_returnsBadRequest() {
+        ResponseEntity<String> response = controller.proxyScorers("FL1", 5, "23", headers);
+
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        verifyNoInteractions(footballDataProxyService);
+    }
+
+    @Test
+    void testProxyStandings_whenSeasonIsEmpty_delegatesToService() {
+        ResponseEntity<String> serviceResponse = new ResponseEntity<>("{}", HttpStatus.OK);
+        when(footballDataProxyService.getStandings("FL1", "", headers)).thenReturn(serviceResponse);
+
+        assertSame(serviceResponse, controller.proxyStandings("FL1", "", headers));
+    }
+
+    @Test
+    void testProxyScorers_whenSeasonIsEmpty_delegatesToService() {
+        ResponseEntity<String> serviceResponse = new ResponseEntity<>("{}", HttpStatus.OK);
+        when(footballDataProxyService.getScorers("FL1", null, "", headers)).thenReturn(serviceResponse);
+
+        assertSame(serviceResponse, controller.proxyScorers("FL1", null, "", headers));
+    }
+
+    @Test
+    void testProxyStandings_whenIdAndSeasonAreInvalid_idErrorComesFirst() {
+        ResponseEntity<String> response = controller.proxyStandings("bad id", "zzzz", headers);
+
+        assertTrue(response.getBody().contains("Invalid competition ID format"));
+    }
+
     // ==================== Délégation vers le service ====================
 
     @Test
