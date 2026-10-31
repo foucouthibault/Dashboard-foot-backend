@@ -36,6 +36,7 @@ import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -217,6 +218,32 @@ class CompetitionProxyHttpTest {
             .andExpect(jsonPath("$.scorers[0].goals").value(12))
             .andExpect(jsonPath("$.scorers[0].assists").value(3))
             .andExpect(jsonPath("$.scorers[0].penalties").value(2));
+    }
+
+    // ==================== Cache et quota ====================
+
+    @Test
+    void cacheHit_doesNotCallUpstreamNorConsumeTheQuota() throws Exception {
+        upstreamReturns(BASE + "/competitions/FL1", fixture("competition.json"));
+
+        mockMvc.perform(get("/api/competitions/FL1")).andExpect(status().isOk());
+        mockMvc.perform(get("/api/competitions/FL1")).andExpect(status().isOk());
+
+        verify(restTemplate, times(1)).exchange(any(URI.class), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class));
+        verify(rateLimiter, times(1)).tryAcquire();
+    }
+
+    @Test
+    void scorersWithDifferentLimits_shareOneUpstreamCallAndOneQuotaSlot() throws Exception {
+        upstreamReturns(BASE + "/competitions/FL1/scorers?limit=50", fixture("scorers.json"));
+
+        mockMvc.perform(get("/api/competitions/FL1/scorers").param("limit", "5"))
+            .andExpect(jsonPath("$.scorers", hasSize(5)));
+        mockMvc.perform(get("/api/competitions/FL1/scorers").param("limit", "3"))
+            .andExpect(jsonPath("$.scorers", hasSize(3)));
+
+        verify(restTemplate, times(1)).exchange(any(URI.class), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class));
+        verify(rateLimiter, times(1)).tryAcquire();
     }
 
     // ==================== Buteurs : limit et season ====================

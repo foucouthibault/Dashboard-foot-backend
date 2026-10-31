@@ -81,7 +81,7 @@ class FootballDataProxyServiceCharacterizationTest {
         return created;
     }
 
-    /** Limiteur réel sur une horloge figée : aucun test ne dépend de l'heure réelle. */
+    /** Limiteur réel sur une horloge figée : le quota ne dépend pas de l'heure réelle. */
     private static FootballDataRateLimiter limiter(int maxRequestsPerMinute) {
         return new FootballDataRateLimiter(maxRequestsPerMinute, Duration.ofMinutes(1), FIXED_CLOCK);
     }
