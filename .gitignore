@@ -3,3 +3,6 @@ target/
 
 ### Environment ###
 .env
+
+# Corps de PR écrit par Claude dans le workflow @claude (gh pr create --body-file)
+pr-body.md

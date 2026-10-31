@@ -60,5 +60,10 @@ jobs:
           # or https://code.claude.com/docs/en/cli-reference for available options
           # claude_args: '--allowed-tools Bash(gh pr *)'
           # Maven via le wrapper : runner jetable, sans clé d'API football-data (tests sans réseau)
-          claude_args: '--allowedTools "Bash(./mvnw:*)"'
+          # gh : Claude ouvre la PR et lit la CI avec le jeton de l'app Claude (GH_TOKEN fourni
+          # par l'action). Pas de GITHUB_TOKEN : une PR ouverte avec lui ne lancerait pas la CI.
+          # Sans ces règles, l'action se contente de pousser la branche et de donner un lien.
+          claude_args: |
+            --allowedTools "Bash(./mvnw:*),Bash(gh pr create:*),Bash(gh pr view:*),Bash(gh pr checks:*)"
+            --append-system-prompt "Si la demande prévoit une PR, ouvre-la toi-même avec gh pr create --base main --body-file pr-body.md (fichier écrit à la racine, jamais commité), puis donne son lien au lieu du lien Create PR."
 
