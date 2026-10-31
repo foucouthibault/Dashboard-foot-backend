@@ -23,7 +23,10 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -47,6 +50,8 @@ import static org.mockito.Mockito.when;
 class FootballDataProxyServiceCharacterizationTest {
 
     private static final String BASE = "https://api.football-data.org/v4";
+    private static final Clock FIXED_CLOCK =
+        Clock.fixed(Instant.parse("2026-01-15T12:00:00Z"), ZoneOffset.UTC);
 
     @Mock
     private RestTemplate restTemplate;
@@ -67,10 +72,15 @@ class FootballDataProxyServiceCharacterizationTest {
 
     private FootballDataProxyService newService(String baseUrl, String token) {
         FootballDataProxyService created =
-            new FootballDataProxyService(restTemplate, cacheManager, new FootballDataRateLimiter(1000));
+            new FootballDataProxyService(restTemplate, cacheManager, limiter(1000));
         setField(created, "apiBaseUrl", baseUrl);
         setField(created, "apiToken", token);
         return created;
+    }
+
+    /** Limiteur réel sur une horloge figée : aucun test ne dépend de l'heure réelle. */
+    private static FootballDataRateLimiter limiter(int maxRequestsPerMinute) {
+        return new FootballDataRateLimiter(maxRequestsPerMinute, Duration.ofMinutes(1), FIXED_CLOCK);
     }
 
     private static void setField(FootballDataProxyService target, String name, String value) {
@@ -442,7 +452,7 @@ class FootballDataProxyServiceCharacterizationTest {
     @Test
     void whenACacheIsMissing_theCallStillWorksAndNothingIsStored() {
         FootballDataProxyService withoutCaches =
-            new FootballDataProxyService(restTemplate, new NoCacheManager(), new FootballDataRateLimiter(1000));
+            new FootballDataProxyService(restTemplate, new NoCacheManager(), limiter(1000));
         setField(withoutCaches, "apiBaseUrl", BASE);
         setField(withoutCaches, "apiToken", "");
         upstreamReturns(ok("{}"));
@@ -563,7 +573,7 @@ class FootballDataProxyServiceCharacterizationTest {
     @Test
     void scorers_rateLimited_isReturnedUntrimmed() {
         FootballDataProxyService limited = new FootballDataProxyService(
-            restTemplate, cacheManager, new FootballDataRateLimiter(0));
+            restTemplate, cacheManager, limiter(0));
         setField(limited, "apiBaseUrl", BASE);
         setField(limited, "apiToken", "");
 

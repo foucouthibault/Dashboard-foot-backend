@@ -30,6 +30,7 @@ import java.nio.charset.StandardCharsets;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.nullValue;
 import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -131,8 +132,11 @@ class CompetitionProxyHttpTest {
             .andExpect(jsonPath("$.competition.name").value("Ligue 1"))
             .andExpect(jsonPath("$.season.currentMatchday").value(10))
             .andExpect(jsonPath("$.standings[0].type").value("TOTAL"))
+            .andExpect(jsonPath("$.standings[0].stage").value("REGULAR_SEASON"))
+            .andExpect(jsonPath("$.standings[0].group").value(nullValue()))
             .andExpect(jsonPath("$.standings[0].table", hasSize(2)))
             .andExpect(jsonPath("$.standings[0].table[0].position").value(1))
+            .andExpect(jsonPath("$.standings[0].table[0].team.id").value(524))
             .andExpect(jsonPath("$.standings[0].table[0].team.name").value("Paris Saint-Germain FC"))
             .andExpect(jsonPath("$.standings[0].table[0].team.shortName").value("PSG"))
             .andExpect(jsonPath("$.standings[0].table[0].team.tla").value("PSG"))
@@ -169,8 +173,12 @@ class CompetitionProxyHttpTest {
             .andExpect(jsonPath("$.matches[0].status").value("FINISHED"))
             .andExpect(jsonPath("$.matches[0].matchday").value(1))
             .andExpect(jsonPath("$.matches[0].homeTeam.name").exists())
+            .andExpect(jsonPath("$.matches[0].homeTeam.id").value(524))
             .andExpect(jsonPath("$.matches[0].homeTeam.crest").exists())
             .andExpect(jsonPath("$.matches[0].awayTeam.tla").value("OM"))
+            .andExpect(jsonPath("$.matches[0].awayTeam.id").value(516))
+            .andExpect(jsonPath("$.matches[0].awayTeam.name").value("Olympique de Marseille"))
+            .andExpect(jsonPath("$.matches[0].awayTeam.crest").exists())
             .andExpect(jsonPath("$.matches[0].score.winner").value("HOME_TEAM"))
             .andExpect(jsonPath("$.matches[0].score.fullTime.home").value(2))
             .andExpect(jsonPath("$.matches[0].score.fullTime.away").value(1))
@@ -198,6 +206,7 @@ class CompetitionProxyHttpTest {
             .andExpect(jsonPath("$.scorers[0].player.nationality").value("France"))
             .andExpect(jsonPath("$.scorers[0].player.position").exists())
             .andExpect(jsonPath("$.scorers[0].team.name").exists())
+            .andExpect(jsonPath("$.scorers[0].team.id").value(524))
             .andExpect(jsonPath("$.scorers[0].team.crest").exists())
             .andExpect(jsonPath("$.scorers[0].playedMatches").value(10))
             .andExpect(jsonPath("$.scorers[0].goals").value(12))

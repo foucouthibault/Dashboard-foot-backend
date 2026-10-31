@@ -139,7 +139,7 @@ class CompetitionProxyControllerTest {
     }
 
     @Test
-    void testProxyStandings_whenInvalidSeasonAndNoId_idErrorComesFirst() {
+    void testProxyStandings_whenIdAndSeasonAreInvalid_idErrorComesFirst() {
         ResponseEntity<String> response = controller.proxyStandings("bad id", "zzzz", headers);
 
         assertTrue(response.getBody().contains("Invalid competition ID format"));
