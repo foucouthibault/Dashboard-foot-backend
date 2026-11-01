@@ -54,8 +54,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * des tests séparés.
  *
  * Depuis #35, toutes les erreurs sont des ProblemDetail (RFC 9457) en
- * {@code application/problem+json} : {@code type}, {@code title}, {@code status},
- * {@code detail}. Les statuts et l'en-tête {@code Retry-After} n'ont pas changé.
+ * {@code application/problem+json} : {@code title}, {@code status}, {@code detail}
+ * ({@code type} omis, donc {@code about:blank}). Les statuts et l'en-tête {@code Retry-After} n'ont pas changé.
  *
  * Depuis #34, les réponses sont typées : seuls les champs déclarés dans les types du
  * frontend ({@code Dashboard-foot/src/types/index.ts}) sont renvoyés, plus {@code count}
@@ -335,10 +335,11 @@ class CompetitionProxyHttpTest {
             .andExpect(header().string("Content-Type", PROBLEM_JSON));
     }
 
+    /** {@code type} absent vaut {@code about:blank} (RFC 9457, § 4.2.1) : Spring l'omet. */
     @Test
     void invalidId_bodyIsAProblemDetail() throws Exception {
         mockMvc.perform(get("/api/competitions/FL1$"))
-            .andExpect(jsonPath("$.type").value("about:blank"))
+            .andExpect(jsonPath("$.type").doesNotExist())
             .andExpect(jsonPath("$.title").value("Bad Request"))
             .andExpect(jsonPath("$.status").value(400))
             .andExpect(jsonPath("$.detail").value("Format d'identifiant de compétition invalide"))

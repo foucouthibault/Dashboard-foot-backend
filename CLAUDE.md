@@ -21,7 +21,8 @@ Toujours utiliser `./mvnw`, pas un `mvn` global.
   (4 chiffres), puis délègue. Aucune logique métier ici ; une entrée invalide lève
   `InvalidRequestException`.
 - `controller/ApiExceptionHandler` : traduit les exceptions du paquet `exception` en
-  réponses HTTP (`{"error": "..."}` en JSON, ou erreur amont relayée telle quelle).
+  `ProblemDetail` (RFC 9457, `application/problem+json`) au `detail` fixe ; étend
+  `ResponseEntityExceptionHandler` pour que les erreurs de Spring MVC aient le même format.
 - `service/FootballDataProxyService` : cache, appel HTTP, désérialisation en records,
   erreurs par exceptions, contrôle SSRF, découpage des buteurs.
 - `model/` : records des réponses (`CompetitionResponse`, `StandingsResponse`,
@@ -44,7 +45,8 @@ Toujours utiliser `./mvnw`, pas un `mvn` global.
 - **Sécurité** : le jeton reste côté serveur ; seuls `Accept` et `Accept-Language` sont
   relayés ; l'URL sortante doit garder le schéma, l'hôte et le port de
   `football-data.api.base-url` (`isAllowedApiUri`) ; une exception réseau donne un `502`
-  sans exposer son message.
+  sans exposer son message ; le corps d'une erreur de football-data.org ne va que dans
+  les logs (seul son statut est renvoyé).
 - **Les tests ne touchent jamais la vraie API** : `RestTemplate` est mocké avec Mockito et
   le temps est simulé via `Clock`. Ne pas ajouter de test qui consomme le quota.
 
