@@ -35,47 +35,23 @@
 		<sonar.organization>foucouthibault</sonar.organization>
 		<sonar.projectKey>foucouthibault_Dashboard-foot-backend</sonar.projectKey>
 		<sonar.host.url>https://sonarcloud.io</sonar.host.url>
+		<!-- Jackson 3.1.7 (géré par Spring Boot 4.1.2) est touché par CVE-2026-110879
+		     (GHSA-m8xf-2cr7-77ph), corrigée en 3.1.8 et 3.2.4. Le BOM aligne tous les modules.
+		     À retirer quand Spring Boot gérera Jackson 3.2.4 ou plus. -->
+		<jackson-bom.version>3.2.4</jackson-bom.version>
+		<!-- Jackson 3 réutilise jackson-annotations de Jackson 2, géré par ce second BOM :
+		     3.2.4 attend les annotations 2.22. À retirer en même temps que jackson-bom.version. -->
+		<jackson-2-bom.version>2.22.4</jackson-2-bom.version>
 	</properties>
 	<dependencies>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-web</artifactId>
-			<exclusions>
-				<exclusion>
-					<groupId>tools.jackson.core</groupId>
-					<artifactId>jackson-databind</artifactId>
-				</exclusion>
-			</exclusions>
-		</dependency>
-		<!-- Ajoute la version sécurisée de jackson-databind -->
-		<dependency>
-			<groupId>tools.jackson.core</groupId>
-			<artifactId>jackson-databind</artifactId>
-			<version>3.2.4</version>
 		</dependency>
 
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-cache</artifactId>
-			<exclusions>
-				<exclusion>
-					<groupId>org.apache.logging.log4j</groupId>
-					<artifactId>log4j-api</artifactId>
-				</exclusion>
-			</exclusions>
-		</dependency>
-		<!-- Ajoute la version sécurisée de log4j-api -->
-		<dependency>
-			<groupId>org.apache.logging.log4j</groupId>
-			<artifactId>log4j-api</artifactId>
-			<version>2.26.1</version>
-		</dependency>
-
-		<!-- Assure que log4j-to-slf4j utilise la même version -->
-		<dependency>
-			<groupId>org.apache.logging.log4j</groupId>
-			<artifactId>log4j-to-slf4j</artifactId>
-			<version>2.26.1</version>
 		</dependency>
 		<dependency>
 			<groupId>com.github.ben-manes.caffeine</groupId>
