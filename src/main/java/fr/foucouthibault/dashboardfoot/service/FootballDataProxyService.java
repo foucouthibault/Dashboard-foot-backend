@@ -1,6 +1,14 @@
 package fr.foucouthibault.dashboardfoot.service;
 
 import fr.foucouthibault.dashboardfoot.config.CacheConfig;
+import fr.foucouthibault.dashboardfoot.exception.RateLimitExceededException;
+import fr.foucouthibault.dashboardfoot.exception.UpstreamErrorException;
+import fr.foucouthibault.dashboardfoot.exception.UpstreamUnavailableException;
+import fr.foucouthibault.dashboardfoot.exception.UpstreamUrlRejectedException;
+import fr.foucouthibault.dashboardfoot.model.CompetitionResponse;
+import fr.foucouthibault.dashboardfoot.model.MatchesResponse;
+import fr.foucouthibault.dashboardfoot.model.ScorersResponse;
+import fr.foucouthibault.dashboardfoot.model.StandingsResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -11,10 +19,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
-import tools.jackson.databind.JsonNode;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.node.ArrayNode;
-import tools.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.net.URI;
 import java.time.Year;
@@ -24,10 +32,10 @@ import java.util.regex.Pattern;
 
 /**
  * Centralise l'appel à football-data.org : limitation de débit, cache différencié
- * par nature de donnée, et normalisation des erreurs. Extrait du contrôleur pour que
- * les appels de cache passent par le proxy Spring (l'auto-invocation casse @Cacheable),
- * même si ici le cache est piloté manuellement via CacheManager pour choisir la bonne
- * durée de vie selon que la saison demandée est terminée ou en cours.
+ * par nature de donnée, désérialisation en réponses typées et normalisation des erreurs.
+ * Le cache est piloté manuellement via CacheManager pour choisir la bonne durée de vie
+ * selon que la saison demandée est terminée ou en cours ; il stocke les réponses typées.
+ * Les erreurs sont signalées par des exceptions, traduites en HTTP par ApiExceptionHandler.
  */
 @Service
 public class FootballDataProxyService {
@@ -44,7 +52,10 @@ public class FootballDataProxyService {
     private final RestTemplate restTemplate;
     private final CacheManager cacheManager;
     private final FootballDataRateLimiter rateLimiter;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    // Seuls les champs des records sont lus : les autres champs de l'API sont ignorés.
+    private final ObjectMapper objectMapper = JsonMapper.builder()
+        .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+        .build();
 
     @Value("${football-data.api.base-url:https://api.football-data.org/v4}")
     private String apiBaseUrl;
@@ -59,12 +70,12 @@ public class FootballDataProxyService {
         this.rateLimiter = rateLimiter;
     }
 
-    public ResponseEntity<String> getCompetition(String id, HttpHeaders headers) {
+    public CompetitionResponse getCompetition(String id, HttpHeaders headers) {
         String url = apiBaseUrl + "/competitions/" + id;
-        return cached(CacheConfig.STATIC_CACHE, "competition_" + id, url, headers);
+        return cached(CacheConfig.STATIC_CACHE, "competition_" + id, url, headers, CompetitionResponse.class);
     }
 
-    public ResponseEntity<String> getStandings(String id, String season, HttpHeaders headers) {
+    public StandingsResponse getStandings(String id, String season, HttpHeaders headers) {
         String url = UriComponentsBuilder.fromUriString(apiBaseUrl + "/competitions/" + id + "/standings")
             .queryParamIfPresent("season", seasonParam(season))
             .build()
@@ -72,15 +83,15 @@ public class FootballDataProxyService {
             .toUriString();
         String cacheName = isHistoricalSeason(season) ? CacheConfig.HISTORICAL_SEASON_CACHE : CacheConfig.CURRENT_SEASON_CACHE;
         String cacheKey = "standings_" + id + "_" + normalizeSeason(season);
-        return cached(cacheName, cacheKey, url, headers);
+        return cached(cacheName, cacheKey, url, headers, StandingsResponse.class);
     }
 
-    public ResponseEntity<String> getMatches(String id, HttpHeaders headers) {
+    public MatchesResponse getMatches(String id, HttpHeaders headers) {
         String url = apiBaseUrl + "/competitions/" + id + "/matches";
-        return cached(CacheConfig.STATIC_CACHE, "matches_" + id, url, headers);
+        return cached(CacheConfig.STATIC_CACHE, "matches_" + id, url, headers, MatchesResponse.class);
     }
 
-    public ResponseEntity<String> getScorers(String id, Integer limit, String season, HttpHeaders headers) {
+    public ScorersResponse getScorers(String id, Integer limit, String season, HttpHeaders headers) {
         String url = UriComponentsBuilder.fromUriString(apiBaseUrl + "/competitions/" + id + "/scorers")
             .queryParam("limit", SCORERS_MAX_LIMIT)
             .queryParamIfPresent("season", seasonParam(season))
@@ -89,8 +100,8 @@ public class FootballDataProxyService {
             .toUriString();
         String cacheName = isHistoricalSeason(season) ? CacheConfig.HISTORICAL_SEASON_CACHE : CacheConfig.CURRENT_SEASON_CACHE;
         String cacheKey = "scorers_" + id + "_" + normalizeSeason(season);
-        ResponseEntity<String> full = cached(cacheName, cacheKey, url, headers);
-        return trimScorers(full, limit);
+        ScorersResponse full = cached(cacheName, cacheKey, url, headers, ScorersResponse.class);
+        return (limit == null || limit >= SCORERS_MAX_LIMIT) ? full : full.limitedTo(limit);
     }
 
     private Optional<String> seasonParam(String season) {
@@ -119,36 +130,64 @@ public class FootballDataProxyService {
         }
     }
 
-    private ResponseEntity<String> cached(String cacheName, String key, String url, HttpHeaders incomingHeaders) {
+    private <T> T cached(String cacheName, String key, String url, HttpHeaders incomingHeaders, Class<T> type) {
         Cache cache = cacheManager.getCache(cacheName);
         if (cache != null) {
-            Cache.ValueWrapper wrapper = cache.get(key);
-            if (wrapper != null) {
-                @SuppressWarnings("unchecked")
-                ResponseEntity<String> hit = (ResponseEntity<String>) wrapper.get();
+            T hit = cache.get(key, type);
+            if (hit != null) {
                 return hit;
             }
         }
 
-        ResponseEntity<String> response = fetch(url, incomingHeaders);
-        if (cache != null && response.getStatusCode().is2xxSuccessful()) {
-            // On ne met en cache que les réponses réussies : une erreur transitoire
-            // (429, panne réseau...) ne doit pas rester figée jusqu'à expiration du TTL.
+        // fetch ne renvoie qu'une réponse réussie et lisible : toute erreur lève une exception
+        // et n'est donc jamais mise en cache (une erreur transitoire ne reste pas figée).
+        T response = fetch(url, incomingHeaders, type);
+        if (cache != null) {
             cache.put(key, response);
         }
         return response;
     }
 
-    private ResponseEntity<String> fetch(String url, HttpHeaders incomingHeaders) {
+    private <T> T fetch(String url, HttpHeaders incomingHeaders, Class<T> type) {
         if (!rateLimiter.tryAcquire()) {
             long retryAfter = rateLimiter.secondsUntilNextSlot();
             log.warn("Quota interne d'appels à football-data.org atteint, requête refusée ({}s avant réessai) pour {}", retryAfter, forLog(url));
-            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
-                .header("Retry-After", String.valueOf(retryAfter))
-                .contentType(MediaType.APPLICATION_JSON)
-                .body("{\"error\":\"Trop de requêtes vers l'API football-data.org, réessayez dans quelques secondes\"}");
+            throw new RateLimitExceededException(retryAfter);
         }
 
+        URI targetUri;
+        try {
+            targetUri = URI.create(url);
+        } catch (IllegalArgumentException e) {
+            log.warn("Échec de l'appel à {}", forLog(url), e);
+            throw new UpstreamUnavailableException(e);
+        }
+        if (!isAllowedApiUri(targetUri)) {
+            log.warn("URL sortante refusée (contrôle SSRF): {}", forLog(url));
+            throw new UpstreamUrlRejectedException();
+        }
+
+        HttpEntity<String> entity = new HttpEntity<>(outgoingHeaders(incomingHeaders));
+        String body;
+        try {
+            body = restTemplate.exchange(targetUri, HttpMethod.GET, entity, String.class).getBody();
+        } catch (HttpStatusCodeException e) {
+            // L'API a répondu avec un statut d'erreur (saison hors plan, quota atteint...) :
+            // on transmet ce statut et son message plutôt que de le masquer en 502 générique.
+            log.warn("football-data.org a répondu {} pour {}: {}", e.getStatusCode(), forLog(url), forLog(e.getResponseBodyAsString()));
+            MediaType upstreamContentType = e.getResponseHeaders() != null ? e.getResponseHeaders().getContentType() : null;
+            throw new UpstreamErrorException(e.getStatusCode(),
+                upstreamContentType != null ? upstreamContentType : MediaType.APPLICATION_JSON,
+                e.getResponseBodyAsString());
+        } catch (RuntimeException e) {
+            log.warn("Échec de l'appel à {}", forLog(url), e);
+            throw new UpstreamUnavailableException(e);
+        }
+        return read(body, type, url);
+    }
+
+    /** Seuls Accept-Language et le jeton du serveur sont envoyés ; Accept est forcé à JSON. */
+    private HttpHeaders outgoingHeaders(HttpHeaders incomingHeaders) {
         HttpHeaders requestHeaders = new HttpHeaders();
         if (incomingHeaders != null) {
             incomingHeaders.forEach((headerName, values) -> {
@@ -161,43 +200,23 @@ public class FootballDataProxyService {
         if (apiToken != null && !apiToken.isEmpty()) {
             requestHeaders.set("X-Auth-Token", apiToken);
         }
+        return requestHeaders;
+    }
 
-        HttpEntity<String> entity = new HttpEntity<>(requestHeaders);
-
+    /** Désérialise une réponse réussie ; un corps vide ou illisible est traité comme une panne. */
+    private <T> T read(String body, Class<T> type, String url) {
+        T value;
         try {
-            URI targetUri = URI.create(url);
-            if (!isAllowedApiUri(targetUri)) {
-                log.warn("URL sortante refusée (contrôle SSRF): {}", forLog(url));
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body("{\"error\":\"Invalid upstream URL\"}");
-            }
-            ResponseEntity<String> response = restTemplate.exchange(targetUri, HttpMethod.GET, entity, String.class);
-
-            HttpHeaders responseHeaders = new HttpHeaders();
-            response.getHeaders().forEach((headerName, values) -> {
-                if (!headerName.equalsIgnoreCase("Transfer-Encoding") && !headerName.equalsIgnoreCase("Content-Encoding")) {
-                    responseHeaders.put(headerName, values);
-                }
-            });
-            if (responseHeaders.getContentType() == null) {
-                responseHeaders.setContentType(MediaType.APPLICATION_JSON);
-            }
-
-            return new ResponseEntity<>(response.getBody(), responseHeaders, response.getStatusCode());
-        } catch (HttpStatusCodeException e) {
-            // L'API a répondu avec un statut d'erreur (saison hors plan, quota atteint...) :
-            // on transmet ce statut et son message plutôt que de le masquer en 502 générique.
-            log.warn("football-data.org a répondu {} pour {}: {}", e.getStatusCode(), forLog(url), forLog(e.getResponseBodyAsString()));
-            MediaType upstreamContentType = e.getResponseHeaders() != null ? e.getResponseHeaders().getContentType() : null;
-            return ResponseEntity.status(e.getStatusCode())
-                .contentType(upstreamContentType != null ? upstreamContentType : MediaType.APPLICATION_JSON)
-                .body(e.getResponseBodyAsString());
-        } catch (Exception e) {
-            log.warn("Échec de l'appel à {}", forLog(url), e);
-            return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
-                .body("{\"error\":\"Failed to fetch data from API\"}");
+            value = body == null ? null : objectMapper.readValue(body, type);
+        } catch (JacksonException e) {
+            log.warn("Réponse illisible de football-data.org pour {}", forLog(url), e);
+            throw new UpstreamUnavailableException(e);
         }
+        if (value == null) {
+            log.warn("Réponse vide de football-data.org pour {}", forLog(url));
+            throw new UpstreamUnavailableException(null);
+        }
+        return value;
     }
 
     /**
@@ -244,37 +263,5 @@ public class FootballDataProxyService {
             return uri.getPort();
         }
         return "https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80;
-    }
-
-    private ResponseEntity<String> trimScorers(ResponseEntity<String> response, Integer limit) {
-        if (limit == null || limit >= SCORERS_MAX_LIMIT
-            || !response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
-            return response;
-        }
-        try {
-            JsonNode root = objectMapper.readTree(response.getBody());
-            JsonNode scorersNode = root.get("scorers");
-            if (scorersNode == null || !scorersNode.isArray() || scorersNode.size() <= limit || !(root instanceof ObjectNode objectRoot)) {
-                return response;
-            }
-
-            ArrayNode trimmed = objectMapper.createArrayNode();
-            for (int i = 0; i < limit; i++) {
-                trimmed.add(scorersNode.get(i));
-            }
-            objectRoot.set("scorers", trimmed);
-            if (objectRoot.has("count")) {
-                objectRoot.put("count", trimmed.size());
-            }
-
-            HttpHeaders headers = new HttpHeaders();
-            headers.putAll(response.getHeaders());
-            headers.remove(HttpHeaders.CONTENT_LENGTH);
-
-            return new ResponseEntity<>(objectMapper.writeValueAsString(objectRoot), headers, response.getStatusCode());
-        } catch (Exception e) {
-            log.warn("Impossible de tronquer la réponse des buteurs, renvoi de la liste complète", e);
-            return response;
-        }
     }
 }

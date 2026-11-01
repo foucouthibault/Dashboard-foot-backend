@@ -18,9 +18,15 @@ Toujours utiliser `./mvnw`, pas un `mvn` global.
 ## Architecture
 
 - `controller/CompetitionProxyController` : valide `id` (`^[a-zA-Z0-9_-]+$`) et `season`
-  (4 chiffres), puis délègue. Aucune logique métier ici.
-- `service/FootballDataProxyService` : cache, appel HTTP, normalisation des erreurs,
-  contrôle SSRF, découpage des buteurs.
+  (4 chiffres), puis délègue. Aucune logique métier ici ; une entrée invalide lève
+  `InvalidRequestException`.
+- `controller/ApiExceptionHandler` : traduit les exceptions du paquet `exception` en
+  réponses HTTP (`{"error": "..."}` en JSON, ou erreur amont relayée telle quelle).
+- `service/FootballDataProxyService` : cache, appel HTTP, désérialisation en records,
+  erreurs par exceptions, contrôle SSRF, découpage des buteurs.
+- `model/` : records des réponses (`CompetitionResponse`, `StandingsResponse`,
+  `MatchesResponse`, `ScorersResponse`), limités aux champs lus par le frontend. Listes
+  immuables : les instances sont partagées par le cache.
 - `service/FootballDataRateLimiter` : quota global à fenêtre glissante, `Clock` injectable.
 - `config/CacheConfig` : trois caches Caffeine (statique 60 s, saison en cours 5 min,
   saison terminée 24 h).
@@ -44,9 +50,10 @@ Toujours utiliser `./mvnw`, pas un `mvn` global.
 
 ## Contrat avec le frontend
 
-Les 4 routes `GET /api/competitions/{id}[/standings|/matches|/scorers]` renvoient le JSON
-de football-data.org tel quel. Les types côté frontend sont dans
-`../Dashboard-foot/src/types/index.ts`. Une fonctionnalité qui change une route ou un
+Les 4 routes `GET /api/competitions/{id}[/standings|/matches|/scorers]` renvoient la
+structure JSON de football-data.org réduite aux champs des records de `model/`, qui doivent
+rester alignés sur `../Dashboard-foot/src/types/index.ts` : un champ dont le frontend a
+besoin s'ajoute des deux côtés. Une fonctionnalité qui change une route ou un
 paramètre se fait avec une branche dans chaque dépôt et deux PR qui se référencent.
 
 ## Travailler à partir d'une issue
