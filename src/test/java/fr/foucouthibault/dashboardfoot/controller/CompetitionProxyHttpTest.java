@@ -52,6 +52,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * dépendance à l'heure) sont simulés. Statut, en-têtes et corps sont vérifiés dans
  * des tests séparés pour que le passage à ProblemDetail (#35) n'ait à adapter que
  * les assertions de corps.
+ *
+ * Depuis #34, les réponses sont typées : seuls les champs déclarés dans les types du
+ * frontend ({@code Dashboard-foot/src/types/index.ts}) sont renvoyés, plus {@code count}
+ * pour les buteurs. Les tests « exposesOnlyTheFieldsReadByTheFrontend » vérifient à la
+ * fois leur présence et l'absence d'un échantillon de champs amont non lus.
  */
 @WebMvcTest(CompetitionProxyController.class)
 @Import({FootballDataProxyService.class, CacheConfig.class})
@@ -107,18 +112,17 @@ class CompetitionProxyHttpTest {
     }
 
     @Test
-    void competition_exposesTheFieldsReadByTheFrontend() throws Exception {
+    void competition_exposesOnlyTheFieldsReadByTheFrontend() throws Exception {
         upstreamReturns(BASE + "/competitions/FL1", fixture("competition.json"));
 
         mockMvc.perform(get("/api/competitions/FL1"))
             .andExpect(jsonPath("$.id").value(2015))
             .andExpect(jsonPath("$.name").value("Ligue 1"))
             .andExpect(jsonPath("$.code").value("FL1"))
-            .andExpect(jsonPath("$.emblem").exists())
-            .andExpect(jsonPath("$.area.name").value("France"))
-            .andExpect(jsonPath("$.currentSeason.startDate").exists())
-            .andExpect(jsonPath("$.currentSeason.endDate").exists())
-            .andExpect(jsonPath("$.currentSeason.currentMatchday").value(10));
+            .andExpect(jsonPath("$.emblem").value("https://crests.football-data.org/FL1.png"))
+            .andExpect(jsonPath("$.type").doesNotExist())
+            .andExpect(jsonPath("$.area").doesNotExist())
+            .andExpect(jsonPath("$.currentSeason").doesNotExist());
     }
 
     @Test
@@ -131,12 +135,12 @@ class CompetitionProxyHttpTest {
     }
 
     @Test
-    void standings_exposesTheFieldsReadByTheFrontend() throws Exception {
+    void standings_exposesOnlyTheFieldsReadByTheFrontend() throws Exception {
         upstreamReturns(BASE + "/competitions/FL1/standings", fixture("standings.json"));
 
         mockMvc.perform(get("/api/competitions/FL1/standings"))
-            .andExpect(jsonPath("$.competition.name").value("Ligue 1"))
-            .andExpect(jsonPath("$.season.currentMatchday").value(10))
+            .andExpect(jsonPath("$.competition").doesNotExist())
+            .andExpect(jsonPath("$.season").doesNotExist())
             .andExpect(jsonPath("$.standings[0].type").value("TOTAL"))
             .andExpect(jsonPath("$.standings[0].stage").value("REGULAR_SEASON"))
             .andExpect(jsonPath("$.standings[0].group").value(nullValue()))
@@ -144,11 +148,11 @@ class CompetitionProxyHttpTest {
             .andExpect(jsonPath("$.standings[0].table[0].position").value(1))
             .andExpect(jsonPath("$.standings[0].table[0].team.id").value(524))
             .andExpect(jsonPath("$.standings[0].table[0].team.name").value("Paris Saint-Germain FC"))
-            .andExpect(jsonPath("$.standings[0].table[0].team.shortName").value("PSG"))
-            .andExpect(jsonPath("$.standings[0].table[0].team.tla").value("PSG"))
-            .andExpect(jsonPath("$.standings[0].table[0].team.crest").exists())
+            .andExpect(jsonPath("$.standings[0].table[0].team.crest").value("https://crests.football-data.org/524.png"))
+            .andExpect(jsonPath("$.standings[0].table[0].team.shortName").doesNotExist())
+            .andExpect(jsonPath("$.standings[0].table[0].team.tla").doesNotExist())
             .andExpect(jsonPath("$.standings[0].table[0].playedGames").value(10))
-            .andExpect(jsonPath("$.standings[0].table[0].form").exists())
+            .andExpect(jsonPath("$.standings[0].table[0].form").doesNotExist())
             .andExpect(jsonPath("$.standings[0].table[0].won").value(8))
             .andExpect(jsonPath("$.standings[0].table[0].draw").value(1))
             .andExpect(jsonPath("$.standings[0].table[0].lost").value(1))
@@ -168,11 +172,12 @@ class CompetitionProxyHttpTest {
     }
 
     @Test
-    void matches_exposesTheFieldsReadByTheFrontend() throws Exception {
+    void matches_exposesOnlyTheFieldsReadByTheFrontend() throws Exception {
         upstreamReturns(BASE + "/competitions/FL1/matches", fixture("matches.json"));
 
         mockMvc.perform(get("/api/competitions/FL1/matches"))
-            .andExpect(jsonPath("$.resultSet.count").value(2))
+            .andExpect(jsonPath("$.resultSet").doesNotExist())
+            .andExpect(jsonPath("$.competition").doesNotExist())
             .andExpect(jsonPath("$.matches", hasSize(2)))
             .andExpect(jsonPath("$.matches[0].id").value(497410))
             .andExpect(jsonPath("$.matches[0].utcDate").exists())
@@ -181,14 +186,17 @@ class CompetitionProxyHttpTest {
             .andExpect(jsonPath("$.matches[0].homeTeam.name").exists())
             .andExpect(jsonPath("$.matches[0].homeTeam.id").value(524))
             .andExpect(jsonPath("$.matches[0].homeTeam.crest").exists())
-            .andExpect(jsonPath("$.matches[0].awayTeam.tla").value("OM"))
+            .andExpect(jsonPath("$.matches[0].awayTeam.tla").doesNotExist())
             .andExpect(jsonPath("$.matches[0].awayTeam.id").value(516))
             .andExpect(jsonPath("$.matches[0].awayTeam.name").value("Olympique de Marseille"))
             .andExpect(jsonPath("$.matches[0].awayTeam.crest").exists())
-            .andExpect(jsonPath("$.matches[0].score.winner").value("HOME_TEAM"))
+            .andExpect(jsonPath("$.matches[0].score.winner").doesNotExist())
+            .andExpect(jsonPath("$.matches[0].score.halfTime").doesNotExist())
+            .andExpect(jsonPath("$.matches[0].stage").doesNotExist())
             .andExpect(jsonPath("$.matches[0].score.fullTime.home").value(2))
             .andExpect(jsonPath("$.matches[0].score.fullTime.away").value(1))
-            .andExpect(jsonPath("$.matches[1].score.fullTime.home").doesNotExist());
+            // Match pas encore joué : score null, transmis tel quel (le frontend attend `number | null`)
+            .andExpect(jsonPath("$.matches[1].score.fullTime.home").value(nullValue()));
     }
 
     @Test
@@ -201,7 +209,7 @@ class CompetitionProxyHttpTest {
     }
 
     @Test
-    void scorers_exposesTheFieldsReadByTheFrontend() throws Exception {
+    void scorers_exposesOnlyTheFieldsReadByTheFrontend() throws Exception {
         upstreamReturns(BASE + "/competitions/FL1/scorers?limit=50", fixture("scorers.json"));
 
         mockMvc.perform(get("/api/competitions/FL1/scorers"))
@@ -210,11 +218,14 @@ class CompetitionProxyHttpTest {
             .andExpect(jsonPath("$.scorers[0].player.id").value(1000))
             .andExpect(jsonPath("$.scorers[0].player.name").value("Joueur 0"))
             .andExpect(jsonPath("$.scorers[0].player.nationality").value("France"))
-            .andExpect(jsonPath("$.scorers[0].player.position").exists())
-            .andExpect(jsonPath("$.scorers[0].team.name").exists())
+            .andExpect(jsonPath("$.scorers[0].player.position").doesNotExist())
+            .andExpect(jsonPath("$.scorers[0].player.dateOfBirth").doesNotExist())
+            .andExpect(jsonPath("$.scorers[0].team.name").value("Paris Saint-Germain FC"))
             .andExpect(jsonPath("$.scorers[0].team.id").value(524))
-            .andExpect(jsonPath("$.scorers[0].team.crest").exists())
-            .andExpect(jsonPath("$.scorers[0].playedMatches").value(10))
+            .andExpect(jsonPath("$.scorers[0].team.crest").value("https://crests.football-data.org/524.png"))
+            .andExpect(jsonPath("$.scorers[0].playedMatches").doesNotExist())
+            .andExpect(jsonPath("$.competition").doesNotExist())
+            .andExpect(jsonPath("$.season").doesNotExist())
             .andExpect(jsonPath("$.scorers[0].goals").value(12))
             .andExpect(jsonPath("$.scorers[0].assists").value(3))
             .andExpect(jsonPath("$.scorers[0].penalties").value(2));
@@ -307,16 +318,16 @@ class CompetitionProxyHttpTest {
     }
 
     /*
-     * Les 400 du contrôleur et le 502 du service ne fixent pas de Content-Type, contrairement
-     * au 429 et aux erreurs amont : Spring le choisit d'après l'en-tête Accept du client.
-     * Caractérisation, pas jugement : #35 changera probablement ce comportement.
+     * Avant #34, les 400 et le 502 ne fixaient pas de Content-Type : sans en-tête Accept,
+     * un corps JSON partait en text/plain. Ils sont désormais toujours en application/json,
+     * comme le 429 et les erreurs de l'API.
      */
     @Test
-    void invalidId_contentTypeFollowsTheClientAcceptHeader() throws Exception {
+    void invalidId_contentTypeIsAlwaysJson() throws Exception {
         mockMvc.perform(get("/api/competitions/FL1$").header("Accept", FRONTEND_ACCEPT))
             .andExpect(header().string("Content-Type", "application/json"));
         mockMvc.perform(get("/api/competitions/FL1$"))
-            .andExpect(header().string("Content-Type", "text/plain;charset=UTF-8"));
+            .andExpect(header().string("Content-Type", "application/json"));
     }
 
     @Test
@@ -344,12 +355,12 @@ class CompetitionProxyHttpTest {
     }
 
     @Test
-    void invalidSeason_contentTypeFollowsTheClientAcceptHeader() throws Exception {
+    void invalidSeason_contentTypeIsAlwaysJson() throws Exception {
         mockMvc.perform(get("/api/competitions/FL1/standings").param("season", "abcd")
                 .header("Accept", FRONTEND_ACCEPT))
             .andExpect(header().string("Content-Type", "application/json"));
         mockMvc.perform(get("/api/competitions/FL1/standings").param("season", "abcd"))
-            .andExpect(header().string("Content-Type", "text/plain;charset=UTF-8"));
+            .andExpect(header().string("Content-Type", "application/json"));
     }
 
     @Test
@@ -434,13 +445,13 @@ class CompetitionProxyHttpTest {
     }
 
     @Test
-    void networkFailure_contentTypeFollowsTheClientAcceptHeader() throws Exception {
+    void networkFailure_contentTypeIsAlwaysJson() throws Exception {
         upstreamFails(new ResourceAccessException("Connection refused"));
 
         mockMvc.perform(get("/api/competitions/FL1").header("Accept", FRONTEND_ACCEPT))
             .andExpect(header().string("Content-Type", "application/json"));
         mockMvc.perform(get("/api/competitions/FL1"))
-            .andExpect(header().string("Content-Type", "text/plain;charset=UTF-8"));
+            .andExpect(header().string("Content-Type", "application/json"));
     }
 
     @Test
@@ -450,5 +461,38 @@ class CompetitionProxyHttpTest {
         mockMvc.perform(get("/api/competitions/FL1"))
             .andExpect(jsonPath("$.error").value("Failed to fetch data from API"))
             .andExpect(content().string(not(containsString("secret-internal-host"))));
+    }
+
+    // ==================== Réponse amont réussie mais inexploitable ====================
+
+    @Test
+    void upstreamSuccessWithUnreadableBody_returns502AndIsNotCached() throws Exception {
+        upstreamReturns(BASE + "/competitions/FL1", "ceci n'est pas du JSON");
+
+        mockMvc.perform(get("/api/competitions/FL1"))
+            .andExpect(status().isBadGateway())
+            .andExpect(header().string("Content-Type", "application/json"))
+            .andExpect(jsonPath("$.error").value("Failed to fetch data from API"));
+        mockMvc.perform(get("/api/competitions/FL1"))
+            .andExpect(status().isBadGateway());
+
+        verify(restTemplate, times(2)).exchange(any(URI.class), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class));
+    }
+
+    // ==================== En-têtes de la réponse amont ====================
+
+    @Test
+    void upstreamResponseHeaders_areNotRelayed() throws Exception {
+        when(restTemplate.exchange(eq(URI.create(BASE + "/competitions/FL1")), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class)))
+            .thenReturn(ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("X-Authenticated-Client", "compte-football-data")
+                .header("X-Requests-Available-Minute", "9")
+                .body(fixture("competition.json")));
+
+        mockMvc.perform(get("/api/competitions/FL1"))
+            .andExpect(status().isOk())
+            .andExpect(header().doesNotExist("X-Authenticated-Client"))
+            .andExpect(header().doesNotExist("X-Requests-Available-Minute"));
     }
 }

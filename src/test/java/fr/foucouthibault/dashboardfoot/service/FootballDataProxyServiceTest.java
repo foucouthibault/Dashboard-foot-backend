@@ -1,6 +1,12 @@
 package fr.foucouthibault.dashboardfoot.service;
 
 import fr.foucouthibault.dashboardfoot.config.CacheConfig;
+import fr.foucouthibault.dashboardfoot.exception.RateLimitExceededException;
+import fr.foucouthibault.dashboardfoot.exception.UpstreamErrorException;
+import fr.foucouthibault.dashboardfoot.exception.UpstreamUnavailableException;
+import fr.foucouthibault.dashboardfoot.model.CompetitionResponse;
+import fr.foucouthibault.dashboardfoot.model.ScorersResponse;
+import fr.foucouthibault.dashboardfoot.model.StandingsResponse;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,6 +26,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Year;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -95,17 +102,29 @@ class FootballDataProxyServiceTest {
     }
 
     @Test
+    void theCacheStoresTheTypedResponse() {
+        String url = "https://api.football-data.org/v4/competitions/FL1";
+        mockUpstream(url, new ResponseEntity<>("{\"id\":2015,\"name\":\"Ligue 1\"}", HttpStatus.OK));
+
+        CompetitionResponse response = service.getCompetition("FL1", headers);
+
+        Object cached = cacheManager.getCache(CacheConfig.STATIC_CACHE).get("competition_FL1").get();
+        assertSame(response, cached);
+        assertEquals(new CompetitionResponse(2015L, "Ligue 1", null, null), cached);
+    }
+
+    @Test
     void standingsForDifferentSeasonsAreCachedUnderDifferentKeys() {
         String url2024 = "https://api.football-data.org/v4/competitions/FL1/standings?season=2024";
         String url2025 = "https://api.football-data.org/v4/competitions/FL1/standings?season=2025";
-        mockUpstream(url2024, new ResponseEntity<>("{\"season\":\"2024\"}", HttpStatus.OK));
-        mockUpstream(url2025, new ResponseEntity<>("{\"season\":\"2025\"}", HttpStatus.OK));
+        mockUpstream(url2024, new ResponseEntity<>("{\"standings\":[{\"stage\":\"S2024\"}]}", HttpStatus.OK));
+        mockUpstream(url2025, new ResponseEntity<>("{\"standings\":[{\"stage\":\"S2025\"}]}", HttpStatus.OK));
 
-        ResponseEntity<String> r1 = service.getStandings("FL1", "2024", headers);
-        ResponseEntity<String> r2 = service.getStandings("FL1", "2025", headers);
+        StandingsResponse r1 = service.getStandings("FL1", "2024", headers);
+        StandingsResponse r2 = service.getStandings("FL1", "2025", headers);
 
-        assertEquals("{\"season\":\"2024\"}", r1.getBody());
-        assertEquals("{\"season\":\"2025\"}", r2.getBody());
+        assertEquals("S2024", r1.standings().getFirst().stage());
+        assertEquals("S2025", r2.standings().getFirst().stage());
         verify(restTemplate, times(2)).exchange(any(URI.class), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class));
     }
 
@@ -116,11 +135,10 @@ class FootballDataProxyServiceTest {
             .thenThrow(new RuntimeException("boom"))
             .thenReturn(new ResponseEntity<>("{\"id\":2015}", HttpStatus.OK));
 
-        ResponseEntity<String> failed = service.getCompetition("FL1", headers);
-        ResponseEntity<String> retried = service.getCompetition("FL1", headers);
+        assertThrows(UpstreamUnavailableException.class, () -> service.getCompetition("FL1", headers));
+        CompetitionResponse retried = service.getCompetition("FL1", headers);
 
-        assertEquals(HttpStatus.BAD_GATEWAY, failed.getStatusCode());
-        assertEquals(HttpStatus.OK, retried.getStatusCode());
+        assertEquals(2015L, retried.id());
         verify(restTemplate, times(2)).exchange(eq(URI.create(url)), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class));
     }
 
@@ -156,10 +174,11 @@ class FootballDataProxyServiceTest {
             .thenThrow(HttpClientErrorException.create(HttpStatus.FORBIDDEN, "Forbidden", HttpHeaders.EMPTY,
                 upstreamError.getBytes(StandardCharsets.UTF_8), null));
 
-        ResponseEntity<String> response = service.getScorers("FL1", null, "2026", headers);
+        UpstreamErrorException e = assertThrows(UpstreamErrorException.class,
+            () -> service.getScorers("FL1", null, "2026", headers));
 
-        assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
-        assertEquals(upstreamError, response.getBody());
+        assertEquals(HttpStatus.FORBIDDEN, e.getStatus());
+        assertEquals(upstreamError, e.getBody());
     }
 
     @Test
@@ -168,10 +187,10 @@ class FootballDataProxyServiceTest {
         when(restTemplate.exchange(eq(URI.create(url)), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class)))
             .thenThrow(new RuntimeException("secret internal detail"));
 
-        ResponseEntity<String> response = service.getCompetition("FL1", headers);
+        UpstreamUnavailableException e = assertThrows(UpstreamUnavailableException.class,
+            () -> service.getCompetition("FL1", headers));
 
-        assertEquals(HttpStatus.BAD_GATEWAY, response.getStatusCode());
-        assertFalse(response.getBody().contains("secret internal detail"));
+        assertFalse(e.getMessage().contains("secret internal detail"));
     }
 
     // ==================== Rate limiting ====================
@@ -183,10 +202,10 @@ class FootballDataProxyServiceTest {
         when(exhausted.secondsUntilNextSlot()).thenReturn(37L);
         FootballDataProxyService limitedService = new FootballDataProxyService(restTemplate, cacheManager, exhausted);
 
-        ResponseEntity<String> response = limitedService.getCompetition("FL1", headers);
+        RateLimitExceededException e = assertThrows(RateLimitExceededException.class,
+            () -> limitedService.getCompetition("FL1", headers));
 
-        assertEquals(HttpStatus.TOO_MANY_REQUESTS, response.getStatusCode());
-        assertEquals("37", response.getHeaders().getFirst("Retry-After"));
+        assertEquals(37L, e.getRetryAfterSeconds());
         verifyNoInteractions(restTemplate);
     }
 
@@ -199,7 +218,8 @@ class FootballDataProxyServiceTest {
         FootballDataProxyService limitedService = new FootballDataProxyService(restTemplate, cacheManager, exhausted);
         setFieldOn(limitedService, "apiBaseUrl", "https://api.football-data.org/v4");
 
-        limitedService.getCompetition("FL1\nERROR FAUSSE LIGNE", headers);
+        assertThrows(RateLimitExceededException.class,
+            () -> limitedService.getCompetition("FL1\nERROR FAUSSE LIGNE", headers));
 
         assertTrue(output.getOut().contains("FL1_ERROR FAUSSE LIGNE"));
         assertTrue(output.getOut().lines().noneMatch(line -> line.startsWith("ERROR FAUSSE LIGNE")));
@@ -212,7 +232,7 @@ class FootballDataProxyServiceTest {
             .thenThrow(HttpClientErrorException.create(HttpStatus.FORBIDDEN, "Forbidden", new HttpHeaders(),
                 "refus\r\nERROR FAUSSE LIGNE".getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8));
 
-        service.getCompetition("FL1", headers);
+        assertThrows(UpstreamErrorException.class, () -> service.getCompetition("FL1", headers));
 
         assertTrue(output.getOut().contains("refus__ERROR FAUSSE LIGNE"));
         assertTrue(output.getOut().lines().noneMatch(line -> line.startsWith("ERROR FAUSSE LIGNE")));
@@ -254,21 +274,21 @@ class FootballDataProxyServiceTest {
         String url = "https://api.football-data.org/v4/competitions/FL1/scorers?limit=50";
         mockUpstream(url, new ResponseEntity<>(scorersJson(20), HttpStatus.OK));
 
-        ResponseEntity<String> response = service.getScorers("FL1", 3, null, headers);
+        ScorersResponse response = service.getScorers("FL1", 3, null, headers);
 
-        assertTrue(response.getBody().contains("\"count\":3"));
-        assertEquals(3, countOccurrences(response.getBody(), "\"goals\""));
+        assertEquals(3, response.count());
+        assertEquals(List.of(20, 19, 18), response.scorers().stream().map(s -> s.goals()).toList());
     }
 
     @Test
     void scorersResponseIsNotTrimmedWhenFewerThanRequested() {
         String url = "https://api.football-data.org/v4/competitions/FL1/scorers?limit=50";
-        String body = scorersJson(4);
-        mockUpstream(url, new ResponseEntity<>(body, HttpStatus.OK));
+        mockUpstream(url, new ResponseEntity<>(scorersJson(4), HttpStatus.OK));
 
-        ResponseEntity<String> response = service.getScorers("FL1", 10, null, headers);
+        ScorersResponse response = service.getScorers("FL1", 10, null, headers);
 
-        assertEquals(body, response.getBody());
+        assertEquals(4, response.count());
+        assertEquals(4, response.scorers().size());
     }
 
     private static String scorersJson(int count) {
@@ -278,15 +298,5 @@ class FootballDataProxyServiceTest {
             sb.append("{\"player\":{\"name\":\"Player ").append(i).append("\"},\"goals\":").append(count - i).append("}");
         }
         return sb.append("]}").toString();
-    }
-
-    private static int countOccurrences(String haystack, String needle) {
-        int count = 0;
-        int index = 0;
-        while ((index = haystack.indexOf(needle, index)) != -1) {
-            count++;
-            index += needle.length();
-        }
-        return count;
     }
 }
