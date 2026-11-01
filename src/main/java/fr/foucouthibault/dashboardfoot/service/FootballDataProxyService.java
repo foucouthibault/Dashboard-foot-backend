@@ -173,12 +173,10 @@ public class FootballDataProxyService {
             body = restTemplate.exchange(targetUri, HttpMethod.GET, entity, String.class).getBody();
         } catch (HttpStatusCodeException e) {
             // L'API a répondu avec un statut d'erreur (saison hors plan, quota atteint...) :
-            // on transmet ce statut et son message plutôt que de le masquer en 502 générique.
+            // on transmet ce statut plutôt que de le masquer en 502 générique. Son message ne
+            // va que dans les logs.
             log.warn("football-data.org a répondu {} pour {}: {}", e.getStatusCode(), forLog(url), forLog(e.getResponseBodyAsString()));
-            MediaType upstreamContentType = e.getResponseHeaders() != null ? e.getResponseHeaders().getContentType() : null;
-            throw new UpstreamErrorException(e.getStatusCode(),
-                upstreamContentType != null ? upstreamContentType : MediaType.APPLICATION_JSON,
-                e.getResponseBodyAsString());
+            throw new UpstreamErrorException(e.getStatusCode());
         } catch (RuntimeException e) {
             log.warn("Échec de l'appel à {}", forLog(url), e);
             throw new UpstreamUnavailableException(e);

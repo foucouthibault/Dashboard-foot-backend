@@ -24,13 +24,13 @@ public class CompetitionProxyController {
 
     private static void validateId(String id) {
         if (id == null || !id.matches(VALID_ID_PATTERN)) {
-            throw new InvalidRequestException("Invalid competition ID format");
+            throw new InvalidRequestException("Format d'identifiant de compétition invalide");
         }
     }
 
     private static void validateSeason(String season) {
         if (season != null && !season.isEmpty() && !season.matches(VALID_SEASON_PATTERN)) {
-            throw new InvalidRequestException("Invalid season format");
+            throw new InvalidRequestException("Format de saison invalide");
         }
     }
 
