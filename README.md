@@ -29,7 +29,7 @@ flowchart LR
 
 `{id}` accepte un code (`FL1`, `PL`…) ou un identifiant numérique (`2015`). Un `id` qui ne correspond pas à `^[a-zA-Z0-9_-]+$` ou une `season` qui n'est pas une année sur 4 chiffres renvoient `400`.
 
-Les réponses sont celles de football-data.org, transmises telles quelles.
+Les réponses reprennent la structure de football-data.org, réduite aux champs qu'affiche le frontend (records Java du paquet `model`, alignés sur `src/types/index.ts` du frontend). Les autres champs de l'API sont ignorés. Les erreurs produites par le backend ont la forme `{"error": "…"}`, toujours en `application/json`.
 
 ## Choix techniques
 
@@ -40,10 +40,11 @@ Les réponses sont celles de football-data.org, transmises telles quelles.
   - 24 h pour les saisons terminées, qui ne changent plus.
 - **Seules les réponses réussies sont mises en cache.** Une erreur passagère (`429`, panne réseau) ne reste pas figée jusqu'à la fin de la durée de vie du cache.
 - **Un seul appel pour tous les `limit` de buteurs.** Le service demande toujours 50 buteurs à l'API puis découpe la liste selon le `limit` demandé. Changer de `limit` côté frontend ne consomme donc jamais de quota.
-- **Des erreurs transmises fidèlement.** Un statut d'erreur de l'API (saison hors offre, quota dépassé…) est renvoyé tel quel. Une panne réseau donne un `502` sans exposer le message de l'exception.
+- **Des réponses typées.** Le service désérialise la réponse de l'API dans des records, met ces objets en cache et découpe la liste des buteurs sans repasser par le JSON. Une réponse réussie mais vide ou illisible est traitée comme une panne (`502`) et n'est pas mise en cache.
+- **Des erreurs transmises fidèlement.** Le service signale les erreurs par des exceptions, traduites en réponses HTTP par `ApiExceptionHandler`. Un statut d'erreur de l'API (saison hors offre, quota dépassé…) est renvoyé tel quel, avec son corps. Une panne réseau donne un `502` sans exposer le message de l'exception.
 - **Sécurité :**
   - le jeton reste côté serveur ;
-  - seuls les en-têtes `Accept` et `Accept-Language` du client sont relayés ;
+  - seuls les en-têtes `Accept` et `Accept-Language` du client sont relayés, et aucun en-tête de la réponse de l'API n'est renvoyé au client ;
   - les paramètres sont validés ;
   - l'URL sortante est vérifiée (même schéma, hôte et port que l'URL configurée) pour empêcher toute requête vers un autre serveur (SSRF).
 
@@ -92,8 +93,9 @@ Toutes les valeurs sont dans `src/main/resources/application.properties` et peuv
 ./mvnw test
 ```
 
-29 tests, qui ne demandent ni clé d'API ni accès réseau (l'API est simulée) :
+Les tests ne demandent ni clé d'API ni accès réseau (l'API est simulée) :
 
+- **Couche HTTP** (`CompetitionProxyHttpTest`) : statut, en-têtes et corps vus par le frontend sur les 4 routes, dont les champs renvoyés et ceux qui sont écartés.
 - **Contrôleur** : rejet des identifiants invalides (caractères spéciaux, `/`, injection SQL, remontée de répertoire) et transmission des paramètres.
 - **Service** :
   - utilisation du cache, et une clé de cache par saison ;
@@ -114,7 +116,10 @@ src/main/java/fr/foucouthibault/dashboardfoot/
 │   ├── AppConfig.java                  # RestTemplate
 │   └── CacheConfig.java                # Les trois caches Caffeine
 ├── controller/
+│   ├── ApiExceptionHandler.java        # Exceptions traduites en réponses HTTP
 │   └── CompetitionProxyController.java # Routes /api/competitions et validation
+├── exception/                          # Erreurs du service et du contrôleur
+├── model/                              # Records des réponses (champs lus par le frontend)
 └── service/
     ├── FootballDataProxyService.java   # Appel à l'API, cache, erreurs, sécurité SSRF
     └── FootballDataRateLimiter.java    # Limite de débit à fenêtre glissante
@@ -124,7 +129,7 @@ src/main/java/fr/foucouthibault/dashboardfoot/
 
 - **Cache et quota en mémoire.** Ils sont perdus au redémarrage et propres à chaque instance. Piste : un cache persistant (PostgreSQL ou Redis).
 - **Saison terminée ou en cours ?** Le calcul se fait à partir de l'année civile, donc il est approximatif en juillet-août. Au pire, une saison encore active reste en cache un peu plus longtemps que nécessaire.
-- **Pas de modèle de données.** Les réponses sont transmises en JSON brut. Pistes : des objets de réponse typés et une documentation OpenAPI.
+- **Pas de documentation OpenAPI.** Les réponses sont typées, mais le contrat n'est pas encore publié. Piste : springdoc (#36).
 - **Pas de configuration CORS.** Le frontend passe aujourd'hui par le proxy Vite. Pour un déploiement sur deux domaines différents, il faudra autoriser l'origine du frontend.
 
 ## Licence

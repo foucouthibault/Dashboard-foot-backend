@@ -2,6 +2,13 @@ package fr.foucouthibault.dashboardfoot.service;
 
 import com.github.benmanes.caffeine.cache.Caffeine;
 import fr.foucouthibault.dashboardfoot.config.CacheConfig;
+import fr.foucouthibault.dashboardfoot.exception.RateLimitExceededException;
+import fr.foucouthibault.dashboardfoot.exception.UpstreamErrorException;
+import fr.foucouthibault.dashboardfoot.exception.UpstreamUnavailableException;
+import fr.foucouthibault.dashboardfoot.exception.UpstreamUrlRejectedException;
+import fr.foucouthibault.dashboardfoot.model.CompetitionResponse;
+import fr.foucouthibault.dashboardfoot.model.MatchesResponse;
+import fr.foucouthibault.dashboardfoot.model.ScorersResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -34,6 +41,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -44,8 +52,11 @@ import static org.mockito.Mockito.when;
 
 /**
  * Tests de caractérisation du service : ils décrivent le comportement actuel (contrôle SSRF,
- * en-têtes relayés, en-têtes de réponse, découpage des buteurs) sans le juger, pour sécuriser
+ * en-têtes relayés, désérialisation, découpage des buteurs) sans le juger, pour sécuriser
  * les refactos #34 et #35. Complètent {@link FootballDataProxyServiceTest}.
+ *
+ * Depuis #34, le service renvoie des records et signale les erreurs par des exceptions,
+ * transformées en réponses HTTP par ApiExceptionHandler.
  */
 @ExtendWith(MockitoExtension.class)
 class FootballDataProxyServiceCharacterizationTest {
@@ -132,11 +143,8 @@ class FootballDataProxyServiceCharacterizationTest {
     private void assertRefusedAsInvalidUpstreamUrl(String baseUrl) {
         FootballDataProxyService misconfigured = newService(baseUrl, "test-token");
 
-        ResponseEntity<String> response = misconfigured.getCompetition("FL1", new HttpHeaders());
-
-        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-        assertEquals("{\"error\":\"Invalid upstream URL\"}", response.getBody());
-        assertEquals(MediaType.APPLICATION_JSON, response.getHeaders().getContentType());
+        assertThrows(UpstreamUrlRejectedException.class,
+            () -> misconfigured.getCompetition("FL1", new HttpHeaders()));
         verifyNoInteractions(restTemplate);
     }
 
@@ -160,20 +168,21 @@ class FootballDataProxyServiceCharacterizationTest {
     void ssrf_refusalDoesNotConsumeCache() {
         FootballDataProxyService misconfigured = newService("ftp://api.football-data.org/v4", "test-token");
 
-        misconfigured.getCompetition("FL1", new HttpHeaders());
+        assertThrows(UpstreamUrlRejectedException.class,
+            () -> misconfigured.getCompetition("FL1", new HttpHeaders()));
 
         assertNull(cacheManager.getCache(CacheConfig.STATIC_CACHE).get("competition_FL1"));
     }
 
     @Test
-    void ssrf_malformedBaseUrl_givesA502WithoutLeakingTheMessage() {
+    void ssrf_malformedBaseUrl_isAnUpstreamFailureWithoutLeakingTheMessage() {
         // URI.create(url) échoue avant le contrôle SSRF : c'est le catch générique qui répond.
         FootballDataProxyService misconfigured = newService("http://[invalid", "test-token");
 
-        ResponseEntity<String> response = misconfigured.getCompetition("FL1", new HttpHeaders());
+        UpstreamUnavailableException e = assertThrows(UpstreamUnavailableException.class,
+            () -> misconfigured.getCompetition("FL1", new HttpHeaders()));
 
-        assertEquals(HttpStatus.BAD_GATEWAY, response.getStatusCode());
-        assertEquals("{\"error\":\"Failed to fetch data from API\"}", response.getBody());
+        assertFalse(e.getMessage().contains("[invalid"));
         verifyNoInteractions(restTemplate);
     }
 
@@ -333,93 +342,92 @@ class FootballDataProxyServiceCharacterizationTest {
         assertFalse(capturedRequest().getHeaders().containsHeader("X-Auth-Token"));
     }
 
-    // ==================== En-têtes de réponse ====================
+    // ==================== Réponse amont réussie ====================
 
     @Test
-    void responseHeaders_transferEncodingAndContentEncodingAreFiltered() {
-        HttpHeaders upstream = new HttpHeaders();
-        upstream.setContentType(MediaType.APPLICATION_JSON);
-        upstream.set("Transfer-Encoding", "chunked");
-        upstream.set("content-encoding", "gzip");
-        upstream.set("X-Requests-Available-Minute", "9");
-        upstreamReturns(new ResponseEntity<>("{}", upstream, HttpStatus.OK));
-
-        ResponseEntity<String> response = service.getCompetition("FL1", new HttpHeaders());
-
-        assertFalse(response.getHeaders().containsHeader("Transfer-Encoding"));
-        assertFalse(response.getHeaders().containsHeader("Content-Encoding"));
-        assertEquals("9", response.getHeaders().getFirst("X-Requests-Available-Minute"));
-        assertEquals(MediaType.APPLICATION_JSON, response.getHeaders().getContentType());
-    }
-
-    @Test
-    void responseHeaders_jsonContentTypeIsAddedWhenMissing() {
-        upstreamReturns(new ResponseEntity<>("{}", new HttpHeaders(), HttpStatus.OK));
-
-        ResponseEntity<String> response = service.getCompetition("FL1", new HttpHeaders());
-
-        assertEquals(MediaType.APPLICATION_JSON, response.getHeaders().getContentType());
-    }
-
-    @Test
-    void responseHeaders_existingContentTypeIsKept() {
-        HttpHeaders upstream = new HttpHeaders();
-        upstream.setContentType(MediaType.TEXT_PLAIN);
-        upstreamReturns(new ResponseEntity<>("{}", upstream, HttpStatus.OK));
-
-        ResponseEntity<String> response = service.getCompetition("FL1", new HttpHeaders());
-
-        assertEquals(MediaType.TEXT_PLAIN, response.getHeaders().getContentType());
-    }
-
-    @Test
-    void responseHeaders_successStatusAndBodyAreRelayedUnchanged() {
+    void success_anyUpstream2xxStatusGivesTheTypedBody() {
         upstreamReturns(new ResponseEntity<>("{\"id\":1}", new HttpHeaders(), HttpStatus.ACCEPTED));
 
-        ResponseEntity<String> response = service.getCompetition("FL1", new HttpHeaders());
+        CompetitionResponse response = service.getCompetition("FL1", new HttpHeaders());
 
-        assertEquals(HttpStatus.ACCEPTED, response.getStatusCode());
-        assertEquals("{\"id\":1}", response.getBody());
+        assertEquals(1L, response.id());
+    }
+
+    @Test
+    void success_upstreamContentTypeIsIgnored() {
+        HttpHeaders upstream = new HttpHeaders();
+        upstream.setContentType(MediaType.TEXT_PLAIN);
+        upstreamReturns(new ResponseEntity<>("{\"id\":1,\"name\":\"Ligue 1\"}", upstream, HttpStatus.OK));
+
+        CompetitionResponse response = service.getCompetition("FL1", new HttpHeaders());
+
+        assertEquals("Ligue 1", response.name());
+    }
+
+    @Test
+    void success_unknownFieldsAreIgnored() {
+        upstreamReturns(ok("{\"id\":1,\"type\":\"LEAGUE\",\"area\":{\"name\":\"France\"}}"));
+
+        CompetitionResponse response = service.getCompetition("FL1", new HttpHeaders());
+
+        assertEquals(new CompetitionResponse(1L, null, null, null), response);
+    }
+
+    @Test
+    void success_unreadableBody_isAnUpstreamFailureAndIsNotCached() {
+        upstreamReturns(ok("ceci n'est pas du JSON"));
+
+        assertThrows(UpstreamUnavailableException.class,
+            () -> service.getCompetition("FL1", new HttpHeaders()));
+
+        assertNull(cacheManager.getCache(CacheConfig.STATIC_CACHE).get("competition_FL1"));
+    }
+
+    @Test
+    void success_emptyBody_isAnUpstreamFailureAndIsNotCached() {
+        upstreamReturns(new ResponseEntity<>(null, new HttpHeaders(), HttpStatus.OK));
+
+        assertThrows(UpstreamUnavailableException.class,
+            () -> service.getCompetition("FL1", new HttpHeaders()));
+
+        assertNull(cacheManager.getCache(CacheConfig.STATIC_CACHE).get("competition_FL1"));
     }
 
     // ==================== Erreurs amont ====================
 
+    private UpstreamErrorException upstreamErrorFor(HttpHeaders upstreamHeaders, String body) {
+        when(restTemplate.exchange(any(URI.class), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class)))
+            .thenThrow(HttpClientErrorException.create(HttpStatus.NOT_FOUND, "Not Found", upstreamHeaders,
+                body.getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8));
+        return assertThrows(UpstreamErrorException.class,
+            () -> service.getCompetition("FL1", new HttpHeaders()));
+    }
+
     @Test
     void upstreamError_withoutContentTypeDefaultsToJson() {
-        when(restTemplate.exchange(any(URI.class), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class)))
-            .thenThrow(HttpClientErrorException.create(HttpStatus.NOT_FOUND, "Not Found", new HttpHeaders(),
-                "{\"message\":\"nope\"}".getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8));
+        UpstreamErrorException e = upstreamErrorFor(new HttpHeaders(), "{\"message\":\"nope\"}");
 
-        ResponseEntity<String> response = service.getCompetition("FL1", new HttpHeaders());
-
-        assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
-        assertEquals(MediaType.APPLICATION_JSON, response.getHeaders().getContentType());
-        assertEquals("{\"message\":\"nope\"}", response.getBody());
+        assertEquals(HttpStatus.NOT_FOUND, e.getStatus());
+        assertEquals(MediaType.APPLICATION_JSON, e.getContentType());
+        assertEquals("{\"message\":\"nope\"}", e.getBody());
     }
 
     @Test
     void upstreamError_withoutHeadersDefaultsToJson() {
-        when(restTemplate.exchange(any(URI.class), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class)))
-            .thenThrow(HttpClientErrorException.create(HttpStatus.NOT_FOUND, "Not Found", null,
-                "{}".getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8));
+        UpstreamErrorException e = upstreamErrorFor(null, "{}");
 
-        ResponseEntity<String> response = service.getCompetition("FL1", new HttpHeaders());
-
-        assertEquals(MediaType.APPLICATION_JSON, response.getHeaders().getContentType());
+        assertEquals(MediaType.APPLICATION_JSON, e.getContentType());
     }
 
     @Test
     void upstreamError_keepsTheUpstreamContentType() {
         HttpHeaders upstream = new HttpHeaders();
         upstream.setContentType(MediaType.TEXT_PLAIN);
-        when(restTemplate.exchange(any(URI.class), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class)))
-            .thenThrow(HttpClientErrorException.create(HttpStatus.FORBIDDEN, "Forbidden", upstream,
-                "denied".getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8));
 
-        ResponseEntity<String> response = service.getCompetition("FL1", new HttpHeaders());
+        UpstreamErrorException e = upstreamErrorFor(upstream, "denied");
 
-        assertEquals(MediaType.TEXT_PLAIN, response.getHeaders().getContentType());
-        assertEquals("denied", response.getBody());
+        assertEquals(MediaType.TEXT_PLAIN, e.getContentType());
+        assertEquals("denied", e.getBody());
     }
 
     // ==================== Cache de /matches ====================
@@ -428,8 +436,8 @@ class FootballDataProxyServiceCharacterizationTest {
     void matches_goThroughTheStaticCache() {
         upstreamReturns(ok("{\"matches\":[]}"));
 
-        ResponseEntity<String> first = service.getMatches("FL1", new HttpHeaders());
-        ResponseEntity<String> second = service.getMatches("FL1", new HttpHeaders());
+        MatchesResponse first = service.getMatches("FL1", new HttpHeaders());
+        MatchesResponse second = service.getMatches("FL1", new HttpHeaders());
 
         assertSame(first, second);
         verify(restTemplate).exchange(eq(URI.create(BASE + "/competitions/FL1/matches")),
@@ -460,9 +468,9 @@ class FootballDataProxyServiceCharacterizationTest {
         setField(withoutCaches, "apiToken", "");
         upstreamReturns(ok("{}"));
 
-        ResponseEntity<String> response = withoutCaches.getCompetition("FL1", new HttpHeaders());
+        CompetitionResponse response = withoutCaches.getCompetition("FL1", new HttpHeaders());
 
-        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertNotNull(response);
     }
 
     /** Gestionnaire de cache qui ne connaît aucun cache : getCache renvoie toujours null. */
@@ -480,109 +488,121 @@ class FootballDataProxyServiceCharacterizationTest {
 
     // ==================== Découpage des buteurs ====================
 
-    private ResponseEntity<String> scorers(String upstreamBody, Integer limit) {
+    private static final String THREE_SCORERS =
+        "{\"count\":3,\"scorers\":[{\"goals\":3},{\"goals\":2},{\"goals\":1}]}";
+
+    private ScorersResponse scorers(String upstreamBody, Integer limit) {
         upstreamReturns(ok(upstreamBody));
         return service.getScorers("FL1", limit, HISTORICAL_SEASON, new HttpHeaders());
     }
 
-    @Test
-    void scorers_invalidJsonBody_returnsTheFullResponseWithoutError() {
-        ResponseEntity<String> response = scorers("ceci n'est pas du JSON", 5);
-
-        assertEquals(HttpStatus.OK, response.getStatusCode());
-        assertEquals("ceci n'est pas du JSON", response.getBody());
+    private static java.util.List<Integer> goals(ScorersResponse response) {
+        return response.scorers().stream().map(scorer -> scorer.goals()).toList();
     }
 
     @Test
-    void scorers_bodyThatIsNotAnObject_returnsTheFullResponse() {
-        ResponseEntity<String> response = scorers("[1,2,3]", 1);
+    void scorers_invalidJsonBody_isAnUpstreamFailure() {
+        upstreamReturns(ok("ceci n'est pas du JSON"));
 
-        assertEquals("[1,2,3]", response.getBody());
+        assertThrows(UpstreamUnavailableException.class,
+            () -> service.getScorers("FL1", 5, HISTORICAL_SEASON, new HttpHeaders()));
     }
 
     @Test
-    void scorers_withoutScorersField_returnsTheFullResponse() {
-        ResponseEntity<String> response = scorers("{\"count\":3}", 1);
+    void scorers_bodyThatIsNotAnObject_isAnUpstreamFailure() {
+        upstreamReturns(ok("[1,2,3]"));
 
-        assertEquals("{\"count\":3}", response.getBody());
+        assertThrows(UpstreamUnavailableException.class,
+            () -> service.getScorers("FL1", 1, HISTORICAL_SEASON, new HttpHeaders()));
     }
 
     @Test
-    void scorers_whenScorersIsNotAnArray_returnsTheFullResponse() {
-        ResponseEntity<String> response = scorers("{\"scorers\":\"oops\"}", 1);
+    void scorers_whenScorersIsNotAnArray_isAnUpstreamFailure() {
+        upstreamReturns(ok("{\"scorers\":\"oops\"}"));
 
-        assertEquals("{\"scorers\":\"oops\"}", response.getBody());
+        assertThrows(UpstreamUnavailableException.class,
+            () -> service.getScorers("FL1", 1, HISTORICAL_SEASON, new HttpHeaders()));
+    }
+
+    @Test
+    void scorers_withoutScorersField_givesAnEmptyList() {
+        ScorersResponse response = scorers("{\"count\":3}", 1);
+
+        assertEquals(java.util.List.of(), response.scorers());
+        assertEquals(3, response.count());
     }
 
     @Test
     void scorers_withoutCountField_isTrimmedWithoutAddingCount() {
-        ResponseEntity<String> response = scorers("{\"scorers\":[{\"a\":1},{\"a\":2},{\"a\":3}]}", 2);
+        ScorersResponse response = scorers("{\"scorers\":[{\"goals\":3},{\"goals\":2},{\"goals\":1}]}", 2);
 
-        assertEquals("{\"scorers\":[{\"a\":1},{\"a\":2}]}", response.getBody());
+        assertEquals(java.util.List.of(3, 2), goals(response));
+        assertNull(response.count());
     }
 
     @Test
-    void scorers_trimmedResponseDropsContentLengthButKeepsOtherHeaders() {
-        HttpHeaders upstream = new HttpHeaders();
-        upstream.setContentType(MediaType.APPLICATION_JSON);
-        upstream.setContentLength(999);
-        upstream.set("X-Requests-Available-Minute", "7");
-        upstreamReturns(new ResponseEntity<>("{\"count\":3,\"scorers\":[1,2,3]}", upstream, HttpStatus.OK));
+    void scorers_trimmedResponseUpdatesCount() {
+        ScorersResponse response = scorers(THREE_SCORERS, 1);
 
-        ResponseEntity<String> response = service.getScorers("FL1", 1, HISTORICAL_SEASON, new HttpHeaders());
+        assertEquals(java.util.List.of(3), goals(response));
+        assertEquals(1, response.count());
+    }
 
-        assertEquals("{\"count\":1,\"scorers\":[1]}", response.getBody());
-        assertFalse(response.getHeaders().containsHeader("Content-Length"));
-        assertEquals("7", response.getHeaders().getFirst("X-Requests-Available-Minute"));
-        assertEquals(MediaType.APPLICATION_JSON, response.getHeaders().getContentType());
+    @Test
+    void scorers_limitOfZeroOrLess_givesAnEmptyList() {
+        assertEquals(java.util.List.of(), goals(scorers(THREE_SCORERS, 0)));
+        assertEquals(java.util.List.of(), goals(service.getScorers("FL1", -1, HISTORICAL_SEASON, new HttpHeaders())));
     }
 
     @Test
     void scorers_limitAtOrAboveTheMaximum_returnsTheCachedResponseAsIs() {
-        ResponseEntity<String> response = scorers("{\"count\":3,\"scorers\":[1,2,3]}", 50);
+        ScorersResponse first = scorers(THREE_SCORERS, 50);
+        ScorersResponse second = service.getScorers("FL1", 50, HISTORICAL_SEASON, new HttpHeaders());
 
-        assertEquals("{\"count\":3,\"scorers\":[1,2,3]}", response.getBody());
+        assertSame(first, second);
+        assertEquals(java.util.List.of(3, 2, 1), goals(first));
     }
 
     @Test
     void scorers_withoutLimit_returnsTheFullResponse() {
-        ResponseEntity<String> response = scorers("{\"count\":3,\"scorers\":[1,2,3]}", null);
+        ScorersResponse response = scorers(THREE_SCORERS, null);
 
-        assertEquals("{\"count\":3,\"scorers\":[1,2,3]}", response.getBody());
+        assertEquals(java.util.List.of(3, 2, 1), goals(response));
+        assertEquals(3, response.count());
     }
 
     @Test
-    void scorers_upstreamError_isReturnedUntrimmed() {
+    void scorers_trimmingDoesNotAlterTheCachedResponse() {
+        scorers(THREE_SCORERS, 1);
+
+        ScorersResponse full = service.getScorers("FL1", null, HISTORICAL_SEASON, new HttpHeaders());
+
+        assertEquals(java.util.List.of(3, 2, 1), goals(full));
+        assertEquals(3, full.count());
+    }
+
+    @Test
+    void scorers_upstreamError_isPropagated() {
         when(restTemplate.exchange(any(URI.class), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class)))
             .thenThrow(HttpClientErrorException.create(HttpStatus.FORBIDDEN, "Forbidden", new HttpHeaders(),
                 "{\"scorers\":[1,2,3]}".getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8));
 
-        ResponseEntity<String> response = service.getScorers("FL1", 1, HISTORICAL_SEASON, new HttpHeaders());
+        UpstreamErrorException e = assertThrows(UpstreamErrorException.class,
+            () -> service.getScorers("FL1", 1, HISTORICAL_SEASON, new HttpHeaders()));
 
-        assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
-        assertEquals("{\"scorers\":[1,2,3]}", response.getBody());
+        assertEquals(HttpStatus.FORBIDDEN, e.getStatus());
+        assertEquals("{\"scorers\":[1,2,3]}", e.getBody());
     }
 
     @Test
-    void scorers_nullBody_isReturnedUntrimmed() {
-        upstreamReturns(new ResponseEntity<>(null, new HttpHeaders(), HttpStatus.OK));
-
-        ResponseEntity<String> response = service.getScorers("FL1", 1, HISTORICAL_SEASON, new HttpHeaders());
-
-        assertEquals(HttpStatus.OK, response.getStatusCode());
-        assertNull(response.getBody());
-    }
-
-    @Test
-    void scorers_rateLimited_isReturnedUntrimmed() {
+    void scorers_rateLimited_doesNotCallUpstream() {
         FootballDataProxyService limited = new FootballDataProxyService(
             restTemplate, cacheManager, limiter(0));
         setField(limited, "apiBaseUrl", BASE);
         setField(limited, "apiToken", "");
 
-        ResponseEntity<String> response = limited.getScorers("FL1", 1, null, new HttpHeaders());
-
-        assertEquals(HttpStatus.TOO_MANY_REQUESTS, response.getStatusCode());
+        assertThrows(RateLimitExceededException.class,
+            () -> limited.getScorers("FL1", 1, null, new HttpHeaders()));
         verify(restTemplate, never()).exchange(any(URI.class), any(HttpMethod.class), any(HttpEntity.class), eq(String.class));
     }
 }
