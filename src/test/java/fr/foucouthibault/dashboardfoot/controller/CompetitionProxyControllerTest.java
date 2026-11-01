@@ -49,8 +49,8 @@ class CompetitionProxyControllerTest {
         assertEquals(expectedMessage, e.getMessage());
     }
 
-    private static final String INVALID_ID = "Invalid competition ID format";
-    private static final String INVALID_SEASON = "Invalid season format";
+    private static final String INVALID_ID = "Format d'identifiant de compétition invalide";
+    private static final String INVALID_SEASON = "Format de saison invalide";
 
     // ==================== Validation de l'ID ====================
 
