@@ -29,7 +29,7 @@ flowchart LR
 
 `{id}` accepte un code (`FL1`, `PL`…) ou un identifiant numérique (`2015`). Un `id` qui ne correspond pas à `^[a-zA-Z0-9_-]+$` ou une `season` qui n'est pas une année sur 4 chiffres renvoient `400`.
 
-Les réponses reprennent la structure de football-data.org, réduite aux champs qu'affiche le frontend (records Java du paquet `model`, alignés sur `src/types/index.ts` du frontend). Les autres champs de l'API sont ignorés. Les erreurs produites par le backend ont la forme `{"error": "…"}`, toujours en `application/json`.
+Les réponses reprennent la structure de football-data.org, réduite aux champs qu'affiche le frontend (records Java du paquet `model`, alignés sur `src/types/index.ts` du frontend). Les autres champs de l'API sont ignorés. Les erreurs sont des `ProblemDetail` ([RFC 9457](https://www.rfc-editor.org/rfc/rfc9457)), toujours en `application/problem+json` : `{"title": "Bad Request", "status": 400, "detail": "Format de saison invalide"}`.
 
 ## Choix techniques
 
@@ -41,7 +41,7 @@ Les réponses reprennent la structure de football-data.org, réduite aux champs 
 - **Seules les réponses réussies sont mises en cache.** Une erreur passagère (`429`, panne réseau) ne reste pas figée jusqu'à la fin de la durée de vie du cache.
 - **Un seul appel pour tous les `limit` de buteurs.** Le service demande toujours 50 buteurs à l'API puis découpe la liste selon le `limit` demandé. Changer de `limit` côté frontend ne consomme donc jamais de quota.
 - **Des réponses typées.** Le service désérialise la réponse de l'API dans des records, met ces objets en cache et découpe la liste des buteurs sans repasser par le JSON. Une réponse réussie mais vide ou illisible est traitée comme une panne (`502`) et n'est pas mise en cache.
-- **Des erreurs transmises fidèlement.** Le service signale les erreurs par des exceptions, traduites en réponses HTTP par `ApiExceptionHandler`. Un statut d'erreur de l'API (saison hors offre, quota dépassé…) est renvoyé tel quel, avec son corps. Une panne réseau donne un `502` sans exposer le message de l'exception.
+- **Des erreurs au format standard.** Le service signale les erreurs par des exceptions, traduites en `ProblemDetail` par `ApiExceptionHandler`, qui étend `ResponseEntityExceptionHandler` pour que les erreurs de Spring MVC (paramètre mal typé…) aient le même format. Un statut d'erreur de l'API (saison hors offre, quota dépassé…) est renvoyé tel quel ; son corps est journalisé mais pas transmis. Une panne réseau donne un `502` sans exposer le message de l'exception.
 - **Sécurité :**
   - le jeton reste côté serveur ;
   - seuls les en-têtes `Accept` et `Accept-Language` du client sont relayés, et aucun en-tête de la réponse de l'API n'est renvoyé au client ;

@@ -178,7 +178,6 @@ class FootballDataProxyServiceTest {
             () -> service.getScorers("FL1", null, "2026", headers));
 
         assertEquals(HttpStatus.FORBIDDEN, e.getStatus());
-        assertEquals(upstreamError, e.getBody());
     }
 
     @Test

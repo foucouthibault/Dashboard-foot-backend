@@ -403,31 +403,29 @@ class FootballDataProxyServiceCharacterizationTest {
             () -> service.getCompetition("FL1", new HttpHeaders()));
     }
 
+    /*
+     * Depuis #35, seul le statut amont est conservé : le corps de l'erreur de football-data.org
+     * part dans les logs, le client reçoit un ProblemDetail construit par ApiExceptionHandler.
+     */
     @Test
-    void upstreamError_withoutContentTypeDefaultsToJson() {
+    void upstreamError_keepsTheUpstreamStatus() {
         UpstreamErrorException e = upstreamErrorFor(new HttpHeaders(), "{\"message\":\"nope\"}");
 
         assertEquals(HttpStatus.NOT_FOUND, e.getStatus());
-        assertEquals(MediaType.APPLICATION_JSON, e.getContentType());
-        assertEquals("{\"message\":\"nope\"}", e.getBody());
     }
 
     @Test
-    void upstreamError_withoutHeadersDefaultsToJson() {
+    void upstreamError_withoutHeadersKeepsTheUpstreamStatus() {
         UpstreamErrorException e = upstreamErrorFor(null, "{}");
 
-        assertEquals(MediaType.APPLICATION_JSON, e.getContentType());
+        assertEquals(HttpStatus.NOT_FOUND, e.getStatus());
     }
 
     @Test
-    void upstreamError_keepsTheUpstreamContentType() {
-        HttpHeaders upstream = new HttpHeaders();
-        upstream.setContentType(MediaType.TEXT_PLAIN);
+    void upstreamError_messageDoesNotContainTheUpstreamBody() {
+        UpstreamErrorException e = upstreamErrorFor(new HttpHeaders(), "jeton-secret-dans-le-corps");
 
-        UpstreamErrorException e = upstreamErrorFor(upstream, "denied");
-
-        assertEquals(MediaType.TEXT_PLAIN, e.getContentType());
-        assertEquals("denied", e.getBody());
+        assertFalse(e.getMessage().contains("jeton-secret-dans-le-corps"));
     }
 
     // ==================== Cache de /matches ====================
@@ -591,7 +589,6 @@ class FootballDataProxyServiceCharacterizationTest {
             () -> service.getScorers("FL1", 1, HISTORICAL_SEASON, new HttpHeaders()));
 
         assertEquals(HttpStatus.FORBIDDEN, e.getStatus());
-        assertEquals("{\"scorers\":[1,2,3]}", e.getBody());
     }
 
     @Test

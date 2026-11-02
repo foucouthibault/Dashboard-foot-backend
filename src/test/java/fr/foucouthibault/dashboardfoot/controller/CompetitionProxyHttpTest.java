@@ -20,6 +20,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 
@@ -50,8 +51,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * (statut, en-têtes, corps) pour les 4 routes. Le service et le cache sont réels,
  * seuls {@link RestTemplate} (pas d'appel réseau) et le limiteur de débit (pas de
  * dépendance à l'heure) sont simulés. Statut, en-têtes et corps sont vérifiés dans
- * des tests séparés pour que le passage à ProblemDetail (#35) n'ait à adapter que
- * les assertions de corps.
+ * des tests séparés.
+ *
+ * Depuis #35, toutes les erreurs sont des ProblemDetail (RFC 9457) en
+ * {@code application/problem+json} : {@code title}, {@code status}, {@code detail}
+ * ({@code type} omis, donc {@code about:blank}). Les statuts et l'en-tête {@code Retry-After} n'ont pas changé.
  *
  * Depuis #34, les réponses sont typées : seuls les champs déclarés dans les types du
  * frontend ({@code Dashboard-foot/src/types/index.ts}) sont renvoyés, plus {@code count}
@@ -67,6 +71,7 @@ class CompetitionProxyHttpTest {
     private static final String HISTORICAL_SEASON = String.valueOf(Year.now().getValue() - 5);
     /** En-tête Accept envoyé par défaut par axios, donc par le frontend. */
     private static final String FRONTEND_ACCEPT = "application/json, text/plain, */*";
+    private static final String PROBLEM_JSON = "application/problem+json";
 
     @Autowired
     private MockMvc mockMvc;
@@ -319,21 +324,26 @@ class CompetitionProxyHttpTest {
 
     /*
      * Avant #34, les 400 et le 502 ne fixaient pas de Content-Type : sans en-tête Accept,
-     * un corps JSON partait en text/plain. Ils sont désormais toujours en application/json,
-     * comme le 429 et les erreurs de l'API.
+     * un corps JSON partait en text/plain. Depuis #35, toutes les erreurs partent en
+     * application/problem+json, quel que soit l'en-tête Accept.
      */
     @Test
-    void invalidId_contentTypeIsAlwaysJson() throws Exception {
+    void invalidId_contentTypeIsAlwaysProblemJson() throws Exception {
         mockMvc.perform(get("/api/competitions/FL1$").header("Accept", FRONTEND_ACCEPT))
-            .andExpect(header().string("Content-Type", "application/json"));
+            .andExpect(header().string("Content-Type", PROBLEM_JSON));
         mockMvc.perform(get("/api/competitions/FL1$"))
-            .andExpect(header().string("Content-Type", "application/json"));
+            .andExpect(header().string("Content-Type", PROBLEM_JSON));
     }
 
+    /** {@code type} absent vaut {@code about:blank} (RFC 9457, § 4.2.1) : Spring l'omet. */
     @Test
-    void invalidId_bodyDescribesTheError() throws Exception {
+    void invalidId_bodyIsAProblemDetail() throws Exception {
         mockMvc.perform(get("/api/competitions/FL1$"))
-            .andExpect(jsonPath("$.error").value("Invalid competition ID format"));
+            .andExpect(jsonPath("$.type").doesNotExist())
+            .andExpect(jsonPath("$.title").value("Bad Request"))
+            .andExpect(jsonPath("$.status").value(400))
+            .andExpect(jsonPath("$.detail").value("Format d'identifiant de compétition invalide"))
+            .andExpect(jsonPath("$.error").doesNotExist());
     }
 
     @Test
@@ -355,18 +365,33 @@ class CompetitionProxyHttpTest {
     }
 
     @Test
-    void invalidSeason_contentTypeIsAlwaysJson() throws Exception {
+    void invalidSeason_contentTypeIsAlwaysProblemJson() throws Exception {
         mockMvc.perform(get("/api/competitions/FL1/standings").param("season", "abcd")
                 .header("Accept", FRONTEND_ACCEPT))
-            .andExpect(header().string("Content-Type", "application/json"));
+            .andExpect(header().string("Content-Type", PROBLEM_JSON));
         mockMvc.perform(get("/api/competitions/FL1/standings").param("season", "abcd"))
-            .andExpect(header().string("Content-Type", "application/json"));
+            .andExpect(header().string("Content-Type", PROBLEM_JSON));
     }
 
     @Test
-    void invalidSeason_bodyDescribesTheError() throws Exception {
+    void invalidSeason_bodyIsAProblemDetail() throws Exception {
         mockMvc.perform(get("/api/competitions/FL1/standings").param("season", "abcd"))
-            .andExpect(jsonPath("$.error").value("Invalid season format"));
+            .andExpect(jsonPath("$.status").value(400))
+            .andExpect(jsonPath("$.detail").value("Format de saison invalide"));
+    }
+
+    // ==================== Paramètre mal typé (erreur levée par Spring MVC) ====================
+
+    @Test
+    void nonNumericLimit_returns400AsAProblemDetailWithoutCallingUpstream() throws Exception {
+        mockMvc.perform(get("/api/competitions/FL1/scorers").param("limit", "abc")
+                .header("Accept", FRONTEND_ACCEPT))
+            .andExpect(status().isBadRequest())
+            .andExpect(header().string("Content-Type", PROBLEM_JSON))
+            .andExpect(jsonPath("$.status").value(400))
+            .andExpect(jsonPath("$.title").value("Bad Request"));
+
+        verify(rateLimiter, never()).tryAcquire();
     }
 
     // ==================== Quota atteint ====================
@@ -388,16 +413,19 @@ class CompetitionProxyHttpTest {
 
         mockMvc.perform(get("/api/competitions/FL1/matches"))
             .andExpect(header().string("Retry-After", "42"))
-            .andExpect(header().string("Content-Type", containsString("application/json")));
+            .andExpect(header().string("Content-Type", PROBLEM_JSON));
     }
 
     @Test
-    void rateLimitExceeded_bodyDescribesTheError() throws Exception {
+    void rateLimitExceeded_bodyIsAProblemDetail() throws Exception {
         when(rateLimiter.tryAcquire()).thenReturn(false);
         when(rateLimiter.secondsUntilNextSlot()).thenReturn(42L);
 
         mockMvc.perform(get("/api/competitions/FL1"))
-            .andExpect(jsonPath("$.error").exists());
+            .andExpect(jsonPath("$.title").value("Too Many Requests"))
+            .andExpect(jsonPath("$.status").value(429))
+            .andExpect(jsonPath("$.detail").value(
+                "Trop de requêtes vers l'API football-data.org, réessayez dans quelques secondes"));
     }
 
     // ==================== Erreur amont (403) ====================
@@ -419,19 +447,36 @@ class CompetitionProxyHttpTest {
     }
 
     @Test
-    void upstreamError_keepsTheUpstreamContentType() throws Exception {
+    void upstreamError_contentTypeIsProblemJson() throws Exception {
+        upstreamForbidden();
+
+        mockMvc.perform(get("/api/competitions/FL1/standings").header("Accept", FRONTEND_ACCEPT))
+            .andExpect(header().string("Content-Type", PROBLEM_JSON));
+    }
+
+    /*
+     * Avant #35, le corps de football-data.org était relayé tel quel. Il ne part plus que
+     * dans les logs : le client reçoit un ProblemDetail portant le statut amont.
+     */
+    @Test
+    void upstreamError_bodyIsAProblemDetailWithoutTheUpstreamBody() throws Exception {
         upstreamForbidden();
 
         mockMvc.perform(get("/api/competitions/FL1/standings"))
-            .andExpect(header().string("Content-Type", containsString("application/json")));
+            .andExpect(jsonPath("$.title").value("Forbidden"))
+            .andExpect(jsonPath("$.status").value(403))
+            .andExpect(jsonPath("$.detail").value("L'API football-data.org a répondu par une erreur"))
+            .andExpect(content().string(not(containsString("Restricted resource"))));
     }
 
     @Test
-    void upstreamError_keepsTheSameBody() throws Exception {
-        upstreamForbidden();
+    void upstreamServerError_keepsTheSameStatus() throws Exception {
+        upstreamFails(HttpServerErrorException.create(HttpStatus.SERVICE_UNAVAILABLE, "Service Unavailable",
+            new HttpHeaders(), new byte[0], StandardCharsets.UTF_8));
 
-        mockMvc.perform(get("/api/competitions/FL1/standings"))
-            .andExpect(content().json("{\"message\":\"Restricted resource\",\"errorCode\":403}", true));
+        mockMvc.perform(get("/api/competitions/FL1"))
+            .andExpect(status().isServiceUnavailable())
+            .andExpect(jsonPath("$.status").value(503));
     }
 
     // ==================== Panne réseau (502) ====================
@@ -445,13 +490,13 @@ class CompetitionProxyHttpTest {
     }
 
     @Test
-    void networkFailure_contentTypeIsAlwaysJson() throws Exception {
+    void networkFailure_contentTypeIsAlwaysProblemJson() throws Exception {
         upstreamFails(new ResourceAccessException("Connection refused"));
 
         mockMvc.perform(get("/api/competitions/FL1").header("Accept", FRONTEND_ACCEPT))
-            .andExpect(header().string("Content-Type", "application/json"));
+            .andExpect(header().string("Content-Type", PROBLEM_JSON));
         mockMvc.perform(get("/api/competitions/FL1"))
-            .andExpect(header().string("Content-Type", "application/json"));
+            .andExpect(header().string("Content-Type", PROBLEM_JSON));
     }
 
     @Test
@@ -459,7 +504,8 @@ class CompetitionProxyHttpTest {
         upstreamFails(new ResourceAccessException("Connection refused: secret-internal-host:1234"));
 
         mockMvc.perform(get("/api/competitions/FL1"))
-            .andExpect(jsonPath("$.error").value("Failed to fetch data from API"))
+            .andExpect(jsonPath("$.status").value(502))
+            .andExpect(jsonPath("$.detail").value("Échec de l'appel à l'API football-data.org"))
             .andExpect(content().string(not(containsString("secret-internal-host"))));
     }
 
@@ -471,8 +517,8 @@ class CompetitionProxyHttpTest {
 
         mockMvc.perform(get("/api/competitions/FL1"))
             .andExpect(status().isBadGateway())
-            .andExpect(header().string("Content-Type", "application/json"))
-            .andExpect(jsonPath("$.error").value("Failed to fetch data from API"));
+            .andExpect(header().string("Content-Type", PROBLEM_JSON))
+            .andExpect(jsonPath("$.detail").value("Échec de l'appel à l'API football-data.org"));
         mockMvc.perform(get("/api/competitions/FL1"))
             .andExpect(status().isBadGateway());
 
