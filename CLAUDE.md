@@ -31,6 +31,8 @@ Toujours utiliser `./mvnw`, pas un `mvn` global.
 - `service/FootballDataRateLimiter` : quota global à fenêtre glissante, `Clock` injectable.
 - `config/CacheConfig` : trois caches Caffeine (statique 60 s, saison en cours 5 min,
   saison terminée 24 h).
+- `config/CorsConfig` : CORS sur `/api/**`, `GET` uniquement, pour les origines de
+  `app.cors.allowed-origins` (vide par défaut : aucune origine externe).
 - `config/OpenApiConfig` : description OpenAPI (springdoc) ; toutes les propriétés des
   réponses y sont obligatoires, un champ qui peut être `null` porte `@Schema(nullable = true)`.
 
