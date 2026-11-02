@@ -1,12 +1,14 @@
 package fr.foucouthibault.dashboardfoot.model;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 import java.util.List;
 
 /**
  * Réponse de {@code GET /api/competitions/{id}/scorers} (type frontend {@code ScorersResponse}).
  * {@code count} n'est pas lu par le frontend mais reste cohérent avec la liste après découpage.
  */
-public record ScorersResponse(Integer count, List<Scorer> scorers) {
+public record ScorersResponse(@Schema(nullable = true) Integer count, List<Scorer> scorers) {
 
     public ScorersResponse {
         scorers = Lists.immutable(scorers);
@@ -24,7 +26,9 @@ public record ScorersResponse(Integer count, List<Scorer> scorers) {
         return new ScorersResponse(count == null ? null : kept.size(), kept);
     }
 
-    public record Scorer(Player player, Team team, Integer goals, Integer assists, Integer penalties) {
+    public record Scorer(Player player, Team team, Integer goals,
+                         @Schema(nullable = true) Integer assists,
+                         @Schema(nullable = true) Integer penalties) {
     }
 
     public record Player(Long id, String name, String nationality) {

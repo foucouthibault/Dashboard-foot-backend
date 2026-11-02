@@ -31,6 +31,8 @@ Toujours utiliser `./mvnw`, pas un `mvn` global.
 - `service/FootballDataRateLimiter` : quota global à fenêtre glissante, `Clock` injectable.
 - `config/CacheConfig` : trois caches Caffeine (statique 60 s, saison en cours 5 min,
   saison terminée 24 h).
+- `config/OpenApiConfig` : description OpenAPI (springdoc) ; toutes les propriétés des
+  réponses y sont obligatoires, un champ qui peut être `null` porte `@Schema(nullable = true)`.
 
 ## Invariants à ne pas casser
 
@@ -55,8 +57,14 @@ Toujours utiliser `./mvnw`, pas un `mvn` global.
 Les 4 routes `GET /api/competitions/{id}[/standings|/matches|/scorers]` renvoient la
 structure JSON de football-data.org réduite aux champs des records de `model/`, qui doivent
 rester alignés sur `../Dashboard-foot/src/types/index.ts` : un champ dont le frontend a
-besoin s'ajoute des deux côtés. Une fonctionnalité qui change une route ou un
-paramètre se fait avec une branche dans chaque dépôt et deux PR qui se référencent.
+besoin s'ajoute des deux côtés.
+
+Le contrat est versionné dans `openapi.json` (racine) : `OpenApiContractTest` le régénère à
+chaque `./mvnw test` et échoue s'il a changé. Committer alors le fichier régénéré. La CI du
+frontend télécharge le `openapi.json` de `main` et vérifie que ses types restent compatibles :
+un changement incompatible casse le frontend. Une fonctionnalité qui change une route ou un
+paramètre se fait donc avec une branche dans chaque dépôt et deux PR qui se référencent ; la
+PR backend est mergée en premier.
 
 ## Travailler à partir d'une issue
 

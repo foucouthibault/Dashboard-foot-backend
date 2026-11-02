@@ -1,0 +1,719 @@
+{
+  "openapi" : "3.0.1",
+  "info" : {
+    "description" : "Proxy vers football-data.org v4 : compétitions, classements, matchs et buteurs. Les réponses reprennent la structure de football-data.org, réduite aux champs lus par le frontend. Les erreurs sont des ProblemDetail (RFC 9457).",
+    "license" : {
+      "name" : "MIT",
+      "url" : "https://opensource.org/licenses/MIT"
+    },
+    "title" : "Dashboard Foot API",
+    "version" : "v1"
+  },
+  "servers" : [ {
+    "url" : "/"
+  } ],
+  "tags" : [ {
+    "description" : "Données de football-data.org, mises en cache",
+    "name" : "Compétitions"
+  } ],
+  "paths" : {
+    "/api/competitions/{id}" : {
+      "get" : {
+        "description" : "Nom, code et logo de la compétition. Cache : 60 s.",
+        "operationId" : "proxyCompetition",
+        "parameters" : [ {
+          "description" : "Code (FL1, PL…) ou identifiant numérique de la compétition",
+          "example" : "FL1",
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "pattern" : "^[a-zA-Z0-9_-]+$",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CompetitionResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Paramètre invalide (identifiant, saison, limit mal typé)"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Ressource hors de l'offre football-data.org, par exemple une saison trop ancienne (statut relayé)"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Compétition inconnue de football-data.org (statut relayé)"
+          },
+          "429" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Quota d'appels à football-data.org atteint (10 par minute, pour tous les visiteurs)",
+            "headers" : {
+              "Retry-After" : {
+                "description" : "Secondes à attendre avant de réessayer",
+                "schema" : {
+                  "type" : "integer"
+                },
+                "style" : "simple"
+              }
+            }
+          },
+          "502" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "football-data.org injoignable, ou réponse vide ou illisible"
+          },
+          "default" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Autre erreur de football-data.org : son statut est relayé, pas son corps"
+          }
+        },
+        "summary" : "Compétition",
+        "tags" : [ "Compétitions" ]
+      }
+    },
+    "/api/competitions/{id}/matches" : {
+      "get" : {
+        "description" : "Matchs de la saison en cours. Cache : 60 s.",
+        "operationId" : "proxyMatches",
+        "parameters" : [ {
+          "description" : "Code (FL1, PL…) ou identifiant numérique de la compétition",
+          "example" : "FL1",
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "pattern" : "^[a-zA-Z0-9_-]+$",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/MatchesResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Paramètre invalide (identifiant, saison, limit mal typé)"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Ressource hors de l'offre football-data.org, par exemple une saison trop ancienne (statut relayé)"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Compétition inconnue de football-data.org (statut relayé)"
+          },
+          "429" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Quota d'appels à football-data.org atteint (10 par minute, pour tous les visiteurs)",
+            "headers" : {
+              "Retry-After" : {
+                "description" : "Secondes à attendre avant de réessayer",
+                "schema" : {
+                  "type" : "integer"
+                },
+                "style" : "simple"
+              }
+            }
+          },
+          "502" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "football-data.org injoignable, ou réponse vide ou illisible"
+          },
+          "default" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Autre erreur de football-data.org : son statut est relayé, pas son corps"
+          }
+        },
+        "summary" : "Matchs",
+        "tags" : [ "Compétitions" ]
+      }
+    },
+    "/api/competitions/{id}/scorers" : {
+      "get" : {
+        "description" : "Meilleurs buteurs. Les 50 premiers sont mis en cache puis découpés selon limit : changer de limit ne consomme pas de quota. Cache : 5 min pour la saison en cours, 24 h pour une saison terminée.",
+        "operationId" : "proxyScorers",
+        "parameters" : [ {
+          "description" : "Code (FL1, PL…) ou identifiant numérique de la compétition",
+          "example" : "FL1",
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "pattern" : "^[a-zA-Z0-9_-]+$",
+            "type" : "string"
+          }
+        }, {
+          "description" : "Nombre de buteurs renvoyés (50 au plus ; tous si absent)",
+          "example" : 10,
+          "in" : "query",
+          "name" : "limit",
+          "required" : false,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        }, {
+          "description" : "Année de début de la saison ; saison en cours si absent",
+          "example" : 2025,
+          "in" : "query",
+          "name" : "season",
+          "required" : false,
+          "schema" : {
+            "pattern" : "^\\d{4}$",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ScorersResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Paramètre invalide (identifiant, saison, limit mal typé)"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Ressource hors de l'offre football-data.org, par exemple une saison trop ancienne (statut relayé)"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Compétition inconnue de football-data.org (statut relayé)"
+          },
+          "429" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Quota d'appels à football-data.org atteint (10 par minute, pour tous les visiteurs)",
+            "headers" : {
+              "Retry-After" : {
+                "description" : "Secondes à attendre avant de réessayer",
+                "schema" : {
+                  "type" : "integer"
+                },
+                "style" : "simple"
+              }
+            }
+          },
+          "502" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "football-data.org injoignable, ou réponse vide ou illisible"
+          },
+          "default" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Autre erreur de football-data.org : son statut est relayé, pas son corps"
+          }
+        },
+        "summary" : "Buteurs",
+        "tags" : [ "Compétitions" ]
+      }
+    },
+    "/api/competitions/{id}/standings" : {
+      "get" : {
+        "description" : "Classements général, domicile et extérieur (par poule le cas échéant). Cache : 5 min pour la saison en cours, 24 h pour une saison terminée.",
+        "operationId" : "proxyStandings",
+        "parameters" : [ {
+          "description" : "Code (FL1, PL…) ou identifiant numérique de la compétition",
+          "example" : "FL1",
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "pattern" : "^[a-zA-Z0-9_-]+$",
+            "type" : "string"
+          }
+        }, {
+          "description" : "Année de début de la saison ; saison en cours si absent",
+          "example" : 2025,
+          "in" : "query",
+          "name" : "season",
+          "required" : false,
+          "schema" : {
+            "pattern" : "^\\d{4}$",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/StandingsResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Paramètre invalide (identifiant, saison, limit mal typé)"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Ressource hors de l'offre football-data.org, par exemple une saison trop ancienne (statut relayé)"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Compétition inconnue de football-data.org (statut relayé)"
+          },
+          "429" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Quota d'appels à football-data.org atteint (10 par minute, pour tous les visiteurs)",
+            "headers" : {
+              "Retry-After" : {
+                "description" : "Secondes à attendre avant de réessayer",
+                "schema" : {
+                  "type" : "integer"
+                },
+                "style" : "simple"
+              }
+            }
+          },
+          "502" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "football-data.org injoignable, ou réponse vide ou illisible"
+          },
+          "default" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Autre erreur de football-data.org : son statut est relayé, pas son corps"
+          }
+        },
+        "summary" : "Classement",
+        "tags" : [ "Compétitions" ]
+      }
+    }
+  },
+  "components" : {
+    "schemas" : {
+      "CompetitionResponse" : {
+        "required" : [ "code", "emblem", "id", "name" ],
+        "type" : "object",
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "emblem" : {
+            "type" : "string",
+            "nullable" : true
+          },
+          "id" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "name" : {
+            "type" : "string"
+          }
+        }
+      },
+      "FullTime" : {
+        "required" : [ "away", "home" ],
+        "type" : "object",
+        "properties" : {
+          "away" : {
+            "type" : "integer",
+            "format" : "int32",
+            "nullable" : true
+          },
+          "home" : {
+            "type" : "integer",
+            "format" : "int32",
+            "nullable" : true
+          }
+        }
+      },
+      "Match" : {
+        "required" : [ "awayTeam", "homeTeam", "id", "matchday", "score", "status", "utcDate" ],
+        "type" : "object",
+        "properties" : {
+          "awayTeam" : {
+            "$ref" : "#/components/schemas/Team"
+          },
+          "homeTeam" : {
+            "$ref" : "#/components/schemas/Team"
+          },
+          "id" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "matchday" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "score" : {
+            "$ref" : "#/components/schemas/Score"
+          },
+          "status" : {
+            "type" : "string"
+          },
+          "utcDate" : {
+            "type" : "string"
+          }
+        }
+      },
+      "MatchesResponse" : {
+        "required" : [ "matches" ],
+        "type" : "object",
+        "properties" : {
+          "matches" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/Match"
+            }
+          }
+        }
+      },
+      "Player" : {
+        "required" : [ "id", "name", "nationality" ],
+        "type" : "object",
+        "properties" : {
+          "id" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "nationality" : {
+            "type" : "string"
+          }
+        }
+      },
+      "ProblemDetail" : {
+        "type" : "object",
+        "properties" : {
+          "detail" : {
+            "type" : "string"
+          },
+          "instance" : {
+            "type" : "string",
+            "format" : "uri"
+          },
+          "status" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "title" : {
+            "type" : "string"
+          },
+          "type" : {
+            "type" : "string",
+            "format" : "uri"
+          }
+        }
+      },
+      "Score" : {
+        "required" : [ "fullTime" ],
+        "type" : "object",
+        "properties" : {
+          "fullTime" : {
+            "$ref" : "#/components/schemas/FullTime"
+          }
+        }
+      },
+      "Scorer" : {
+        "required" : [ "assists", "goals", "penalties", "player", "team" ],
+        "type" : "object",
+        "properties" : {
+          "assists" : {
+            "type" : "integer",
+            "format" : "int32",
+            "nullable" : true
+          },
+          "goals" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "penalties" : {
+            "type" : "integer",
+            "format" : "int32",
+            "nullable" : true
+          },
+          "player" : {
+            "$ref" : "#/components/schemas/Player"
+          },
+          "team" : {
+            "$ref" : "#/components/schemas/Team"
+          }
+        }
+      },
+      "ScorersResponse" : {
+        "required" : [ "count", "scorers" ],
+        "type" : "object",
+        "properties" : {
+          "count" : {
+            "type" : "integer",
+            "format" : "int32",
+            "nullable" : true
+          },
+          "scorers" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/Scorer"
+            }
+          }
+        }
+      },
+      "StandingGroup" : {
+        "required" : [ "group", "stage", "table", "type" ],
+        "type" : "object",
+        "properties" : {
+          "group" : {
+            "type" : "string",
+            "nullable" : true
+          },
+          "stage" : {
+            "type" : "string"
+          },
+          "table" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/StandingRow"
+            }
+          },
+          "type" : {
+            "type" : "string",
+            "enum" : [ "TOTAL", "HOME", "AWAY" ]
+          }
+        }
+      },
+      "StandingRow" : {
+        "required" : [ "draw", "goalDifference", "goalsAgainst", "goalsFor", "lost", "playedGames", "points", "position", "team", "won" ],
+        "type" : "object",
+        "properties" : {
+          "draw" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "goalDifference" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "goalsAgainst" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "goalsFor" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "lost" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "playedGames" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "points" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "position" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "team" : {
+            "$ref" : "#/components/schemas/Team"
+          },
+          "won" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        }
+      },
+      "StandingsResponse" : {
+        "required" : [ "standings" ],
+        "type" : "object",
+        "properties" : {
+          "standings" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/StandingGroup"
+            }
+          }
+        }
+      },
+      "Team" : {
+        "required" : [ "crest", "id", "name" ],
+        "type" : "object",
+        "properties" : {
+          "crest" : {
+            "type" : "string"
+          },
+          "id" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "name" : {
+            "type" : "string"
+          }
+        }
+      }
+    }
+  }
+}

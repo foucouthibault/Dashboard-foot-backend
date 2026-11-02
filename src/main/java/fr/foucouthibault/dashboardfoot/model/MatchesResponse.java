@@ -1,5 +1,7 @@
 package fr.foucouthibault.dashboardfoot.model;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 import java.util.List;
 
 /** Réponse de {@code GET /api/competitions/{id}/matches} (type frontend {@code MatchesResponse}). */
@@ -18,6 +20,6 @@ public record MatchesResponse(List<Match> matches) {
     }
 
     /** Score final : {@code null} tant que le match n'est pas joué. */
-    public record FullTime(Integer home, Integer away) {
+    public record FullTime(@Schema(nullable = true) Integer home, @Schema(nullable = true) Integer away) {
     }
 }

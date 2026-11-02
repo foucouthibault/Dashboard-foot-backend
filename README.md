@@ -29,6 +29,12 @@ flowchart LR
 
 `{id}` accepte un code (`FL1`, `PL`…) ou un identifiant numérique (`2015`). Un `id` qui ne correspond pas à `^[a-zA-Z0-9_-]+$` ou une `season` qui n'est pas une année sur 4 chiffres renvoient `400`.
 
+Le contrat complet (routes, paramètres, schémas des réponses et des erreurs) est décrit en OpenAPI 3 :
+
+- Swagger UI : http://localhost:8080/swagger-ui.html ;
+- spécification : http://localhost:8080/v3/api-docs ;
+- copie versionnée : [`openapi.json`](./openapi.json), d'où le frontend tire ses types.
+
 Les réponses reprennent la structure de football-data.org, réduite aux champs qu'affiche le frontend (records Java du paquet `model`, alignés sur `src/types/index.ts` du frontend). Les autres champs de l'API sont ignorés. Les erreurs sont des `ProblemDetail` ([RFC 9457](https://www.rfc-editor.org/rfc/rfc9457)), toujours en `application/problem+json` : `{"title": "Bad Request", "status": 400, "detail": "Format de saison invalide"}`.
 
 ## Choix techniques
@@ -42,6 +48,7 @@ Les réponses reprennent la structure de football-data.org, réduite aux champs 
 - **Un seul appel pour tous les `limit` de buteurs.** Le service demande toujours 50 buteurs à l'API puis découpe la liste selon le `limit` demandé. Changer de `limit` côté frontend ne consomme donc jamais de quota.
 - **Des réponses typées.** Le service désérialise la réponse de l'API dans des records, met ces objets en cache et découpe la liste des buteurs sans repasser par le JSON. Une réponse réussie mais vide ou illisible est traitée comme une panne (`502`) et n'est pas mise en cache.
 - **Des erreurs au format standard.** Le service signale les erreurs par des exceptions, traduites en `ProblemDetail` par `ApiExceptionHandler`, qui étend `ResponseEntityExceptionHandler` pour que les erreurs de Spring MVC (paramètre mal typé…) aient le même format. Un statut d'erreur de l'API (saison hors offre, quota dépassé…) est renvoyé tel quel ; son corps est journalisé mais pas transmis. Une panne réseau donne un `502` sans exposer le message de l'exception.
+- **Un contrat versionné.** springdoc produit la spécification OpenAPI à partir du contrôleur et des records. `OpenApiContractTest` la réécrit dans `openapi.json` à chaque build et échoue si le fichier versionné était différent : un changement de contrat ne passe pas la CI sans que `openapi.json` soit committé. Le frontend vérifie en CI que ses types sont compatibles avec ce fichier. Tous les champs des réponses y sont obligatoires (Jackson sérialise aussi les `null`) ; ceux qui peuvent valoir `null` portent `@Schema(nullable = true)`.
 - **Sécurité :**
   - le jeton reste côté serveur ;
   - seuls les en-têtes `Accept` et `Accept-Language` du client sont relayés, et aucun en-tête de la réponse de l'API n'est renvoyé au client ;
@@ -85,6 +92,7 @@ Toutes les valeurs sont dans `src/main/resources/application.properties` et peuv
 | `football-data.cache.static-ttl-seconds` | `60` | Cache des compétitions et matchs |
 | `football-data.cache.current-season-ttl-seconds` | `300` | Cache de la saison en cours |
 | `football-data.cache.historical-season-ttl-hours` | `24` | Cache des saisons terminées |
+| `springdoc.swagger-ui.enabled` | `true` | Publie Swagger UI sur `/swagger-ui.html` |
 | `server.port` | `8080` | Port HTTP |
 
 ## Tests
@@ -95,6 +103,7 @@ Toutes les valeurs sont dans `src/main/resources/application.properties` et peuv
 
 Les tests ne demandent ni clé d'API ni accès réseau (l'API est simulée) :
 
+- **Contrat OpenAPI** (`OpenApiContractTest`) : `openapi.json` à jour, 4 routes, paramètres, erreurs en `ProblemDetail`, champs obligatoires et `nullable`, Swagger UI servie.
 - **Couche HTTP** (`CompetitionProxyHttpTest`) : statut, en-têtes et corps vus par le frontend sur les 4 routes, dont les champs renvoyés et ceux qui sont écartés.
 - **Contrôleur** : rejet des identifiants invalides (caractères spéciaux, `/`, injection SQL, remontée de répertoire) et transmission des paramètres.
 - **Service** :
@@ -114,7 +123,8 @@ La CI GitHub Actions compile le projet et lance les tests à chaque push et chaq
 src/main/java/fr/foucouthibault/dashboardfoot/
 ├── config/
 │   ├── AppConfig.java                  # RestTemplate
-│   └── CacheConfig.java                # Les trois caches Caffeine
+│   ├── CacheConfig.java                # Les trois caches Caffeine
+│   └── OpenApiConfig.java              # Description OpenAPI (springdoc)
 ├── controller/
 │   ├── ApiExceptionHandler.java        # Exceptions traduites en réponses HTTP
 │   └── CompetitionProxyController.java # Routes /api/competitions et validation
@@ -129,7 +139,6 @@ src/main/java/fr/foucouthibault/dashboardfoot/
 
 - **Cache et quota en mémoire.** Ils sont perdus au redémarrage et propres à chaque instance. Piste : un cache persistant (PostgreSQL ou Redis).
 - **Saison terminée ou en cours ?** Le calcul se fait à partir de l'année civile, donc il est approximatif en juillet-août. Au pire, une saison encore active reste en cache un peu plus longtemps que nécessaire.
-- **Pas de documentation OpenAPI.** Les réponses sont typées, mais le contrat n'est pas encore publié. Piste : springdoc (#36).
 - **Pas de configuration CORS.** Le frontend passe aujourd'hui par le proxy Vite. Pour un déploiement sur deux domaines différents, il faudra autoriser l'origine du frontend.
 
 ## Licence
