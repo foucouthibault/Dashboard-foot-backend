@@ -49,6 +49,7 @@ Les réponses reprennent la structure de football-data.org, réduite aux champs 
 - **Des réponses typées.** Le service désérialise la réponse de l'API dans des records, met ces objets en cache et découpe la liste des buteurs sans repasser par le JSON. Une réponse réussie mais vide ou illisible est traitée comme une panne (`502`) et n'est pas mise en cache.
 - **Des erreurs au format standard.** Le service signale les erreurs par des exceptions, traduites en `ProblemDetail` par `ApiExceptionHandler`, qui étend `ResponseEntityExceptionHandler` pour que les erreurs de Spring MVC (paramètre mal typé…) aient le même format. Un statut d'erreur de l'API (saison hors offre, quota dépassé…) est renvoyé tel quel ; son corps est journalisé mais pas transmis. Une panne réseau donne un `502` sans exposer le message de l'exception.
 - **Un contrat versionné.** springdoc produit la spécification OpenAPI à partir du contrôleur et des records. `OpenApiContractTest` la réécrit dans `openapi.json` à chaque build et échoue si le fichier versionné était différent : un changement de contrat ne passe pas la CI sans que `openapi.json` soit committé. Le frontend vérifie en CI que ses types sont compatibles avec ce fichier. Tous les champs des réponses y sont obligatoires (Jackson sérialise aussi les `null`) ; ceux qui peuvent valoir `null` portent `@Schema(nullable = true)`.
+- **CORS fermé par défaut.** En développement, le frontend passe par le proxy Vite (même origine). En ligne, son domaine doit figurer dans `app.cors.allowed-origins`, et seules les requêtes `GET` sur `/api/**` sont autorisées. Une origine absente de la liste reçoit un `403` sans atteindre le contrôleur, donc sans consommer de quota.
 - **Sécurité :**
   - le jeton reste côté serveur ;
   - seuls les en-têtes `Accept` et `Accept-Language` du client sont relayés, et aucun en-tête de la réponse de l'API n'est renvoyé au client ;
@@ -92,6 +93,7 @@ Toutes les valeurs sont dans `src/main/resources/application.properties` et peuv
 | `football-data.cache.static-ttl-seconds` | `60` | Cache des compétitions et matchs |
 | `football-data.cache.current-season-ttl-seconds` | `300` | Cache de la saison en cours |
 | `football-data.cache.historical-season-ttl-hours` | `24` | Cache des saisons terminées |
+| `app.cors.allowed-origins` | vide (variable `APP_CORS_ALLOWED_ORIGINS`) | Origines autorisées à appeler `/api/**` en `GET` depuis un navigateur, séparées par des virgules (ex. `https://dashboard-foot.example`). Vide : aucune origine externe |
 | `springdoc.swagger-ui.enabled` | `true` | Publie Swagger UI sur `/swagger-ui.html` |
 | `server.port` | `8080` | Port HTTP |
 
@@ -113,6 +115,7 @@ Les tests ne demandent ni clé d'API ni accès réseau (l'API est simulée) :
   - transmission des statuts d'erreur ;
   - `429` quand le quota est atteint ;
   - découpage des buteurs.
+- **CORS** (`CorsConfigTest`) : en-tête `Access-Control-Allow-Origin` pour une origine autorisée seulement, `GET` uniquement (requête simple et preflight), rien sans configuration.
 - **Limiteur de débit** : quota dans la fenêtre, libération des places, calcul de `Retry-After`. Le temps est simulé avec une `Clock` injectée.
 
 La CI GitHub Actions compile le projet et lance les tests à chaque push et chaque pull request. Dependabot maintient les dépendances à jour.
@@ -124,6 +127,7 @@ src/main/java/fr/foucouthibault/dashboardfoot/
 ├── config/
 │   ├── AppConfig.java                  # RestTemplate
 │   ├── CacheConfig.java                # Les trois caches Caffeine
+│   ├── CorsConfig.java                 # Origines autorisées (CORS)
 │   └── OpenApiConfig.java              # Description OpenAPI (springdoc)
 ├── controller/
 │   ├── ApiExceptionHandler.java        # Exceptions traduites en réponses HTTP
@@ -139,7 +143,6 @@ src/main/java/fr/foucouthibault/dashboardfoot/
 
 - **Cache et quota en mémoire.** Ils sont perdus au redémarrage et propres à chaque instance. Piste : un cache persistant (PostgreSQL ou Redis).
 - **Saison terminée ou en cours ?** Le calcul se fait à partir de l'année civile, donc il est approximatif en juillet-août. Au pire, une saison encore active reste en cache un peu plus longtemps que nécessaire.
-- **Pas de configuration CORS.** Le frontend passe aujourd'hui par le proxy Vite. Pour un déploiement sur deux domaines différents, il faudra autoriser l'origine du frontend.
 
 ## Licence
 
