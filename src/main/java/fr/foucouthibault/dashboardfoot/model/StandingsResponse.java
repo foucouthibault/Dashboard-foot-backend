@@ -1,5 +1,7 @@
 package fr.foucouthibault.dashboardfoot.model;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 import java.util.List;
 
 /** Réponse de {@code GET /api/competitions/{id}/standings} (type frontend {@code StandingsResponse}). */
@@ -10,7 +12,10 @@ public record StandingsResponse(List<StandingGroup> standings) {
     }
 
     /** Un tableau de classement : {@code type} vaut TOTAL, HOME ou AWAY ; {@code group} est null hors poules. */
-    public record StandingGroup(String stage, String type, String group, List<StandingRow> table) {
+    public record StandingGroup(String stage,
+                                @Schema(allowableValues = {"TOTAL", "HOME", "AWAY"}) String type,
+                                @Schema(nullable = true) String group,
+                                List<StandingRow> table) {
 
         public StandingGroup {
             table = Lists.immutable(table);
