@@ -1,0 +1,22 @@
+# Déploiement du backend sur Render (offre gratuite), construit depuis le Dockerfile.
+# Schéma : https://render.com/schema/render.yaml.json
+services:
+  - type: web
+    name: dashboard-foot-backend
+    runtime: docker
+    plan: free
+    region: frankfurt
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /actuator/health
+    # Redéploie à chaque commit sur main, une fois la CI GitHub passée.
+    autoDeployTrigger: checksPass
+    envVars:
+      # Render envoie le trafic public sur PORT : on l'aligne sur server.port.
+      - key: PORT
+        value: "8080"
+      # Secrets et URL saisis dans l'interface de Render, jamais dans ce fichier.
+      - key: FOOTBALL_DATA_API_TOKEN
+        sync: false
+      # URL du frontend déployé, sans « / » final.
+      - key: APP_CORS_ALLOWED_ORIGINS
+        sync: false
