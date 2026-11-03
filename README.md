@@ -83,6 +83,22 @@ Sans clé, l'application démarre quand même, mais football-data.org refusera o
 
 Pour l'interface, lancer ensuite le [frontend](https://github.com/foucouthibault/Dashboard-foot) : son serveur de développement relaie `/api` vers ce backend.
 
+### Avec Docker
+
+Seul Docker est nécessaire (ni Java ni Maven) :
+
+```bash
+docker build -t dashboard-foot-backend .
+docker run -p 8080:8080 -e FOOTBALL_DATA_API_TOKEN=votre_cle dashboard-foot-backend
+```
+
+- **Deux étapes.** L'image compile le projet sur le JDK 25, puis ne garde que le JRE 25 et le jar (Alpine, environ 360 Mo).
+- **Ni clé ni tests dans l'image.** La clé n'est jamais copiée dans l'image : elle est passée au lancement avec `-e`. Les tests ne tournent pas pendant la construction (ils tournent en CI).
+- **Utilisateur non root,** port `8080`.
+- **Contrôle de santé Docker** (`HEALTHCHECK`) sur `/actuator/health`, qui n'appelle jamais football-data.org.
+- **Mémoire :** la JVM limite son tas à 75 % de la mémoire du conteneur (`-XX:MaxRAMPercentage=75`).
+- **Configuration :** toute propriété du tableau ci-dessous se passe par variable d'environnement, par exemple `-e APP_CORS_ALLOWED_ORIGINS=https://...`.
+
 ## Configuration
 
 Toutes les valeurs sont dans `src/main/resources/application.properties` et peuvent être surchargées par variable d'environnement ou argument `--propriete=valeur`.
@@ -122,7 +138,7 @@ Les tests ne demandent ni clé d'API ni accès réseau (l'API est simulée) :
 - **CORS** (`CorsConfigTest`) : en-tête `Access-Control-Allow-Origin` pour une origine autorisée seulement, `GET` uniquement (requête simple et preflight), rien sans configuration.
 - **Limiteur de débit** : quota dans la fenêtre, libération des places, calcul de `Retry-After`. Le temps est simulé avec une `Clock` injectée.
 
-La CI GitHub Actions compile le projet et lance les tests à chaque push et chaque pull request. Dependabot maintient les dépendances à jour.
+La CI GitHub Actions compile le projet et lance les tests à chaque push et chaque pull request. Elle construit aussi l'image Docker sans la publier, puis vérifie que le conteneur démarre et répond `UP` sur `/actuator/health`. Dependabot maintient les dépendances à jour.
 
 ## Structure du projet
 
@@ -141,6 +157,8 @@ src/main/java/fr/foucouthibault/dashboardfoot/
 └── service/
     ├── FootballDataProxyService.java   # Appel à l'API, cache, erreurs, sécurité SSRF
     └── FootballDataRateLimiter.java    # Limite de débit à fenêtre glissante
+Dockerfile                              # Image en deux étapes (JDK 25 → JRE 25)
+openapi.json                            # Contrat de l'API, régénéré par les tests
 ```
 
 ## Limites connues et pistes

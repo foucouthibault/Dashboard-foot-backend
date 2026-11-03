@@ -15,6 +15,14 @@ FOOTBALL_DATA_API_TOKEN=... ./mvnw spring-boot:run   # API sur http://localhost:
 
 Toujours utiliser `./mvnw`, pas un `mvn` global.
 
+```bash
+docker build -t dashboard-foot-backend .                                  # image (JDK 25 → JRE 25)
+docker run -p 8080:8080 -e FOOTBALL_DATA_API_TOKEN=... dashboard-foot-backend
+```
+
+Le `Dockerfile` ne doit jamais contenir de clé (`ENV`, `ARG`, `COPY .env`) : elle est passée au
+lancement. Un fichier nécessaire à la construction doit sortir du `.dockerignore`.
+
 ## Architecture
 
 - `controller/CompetitionProxyController` : valide `id` (`^[a-zA-Z0-9_-]+$`) et `season`
@@ -97,8 +105,9 @@ PR backend est mergée en premier.
 
 ## CI et qualité
 
-- `.github/workflows/maven.yml` : `mvn verify` puis analyse SonarQube Cloud
-  (projet `foucouthibault_Dashboard-foot-backend`, quality gate bloquant sur la PR).
+- `.github/workflows/maven.yml` : job `build` (`mvn verify` puis analyse SonarQube Cloud,
+  projet `foucouthibault_Dashboard-foot-backend`, quality gate bloquant sur la PR) et job
+  `docker` (construit l'image sans la publier, puis vérifie `/actuator/health` du conteneur).
 - Toute nouvelle action GitHub tierce est épinglée sur un SHA complet avec la version
   en commentaire (règle Sonar S7637), même si certains workflows existants utilisent
   encore des tags.

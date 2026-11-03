@@ -1,0 +1,13 @@
+# Seuls .mvn/, mvnw, pom.xml et src/ servent à construire l'image.
+target/
+.git/
+.github/
+.idea/
+.vscode/
+.claude/
+.env
+*.env
+*.md
+openapi.json
+Dockerfile
+.dockerignore
