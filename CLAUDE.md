@@ -23,6 +23,10 @@ docker run -p 8080:8080 -e FOOTBALL_DATA_API_TOKEN=... dashboard-foot-backend
 Le `Dockerfile` ne doit jamais contenir de clé (`ENV`, `ARG`, `COPY .env`) : elle est passée au
 lancement. Un fichier nécessaire à la construction doit sortir du `.dockerignore`.
 
+Déployé sur Render (https://dashboard-foot-backend.onrender.com) depuis `render.yaml`. Les
+secrets y sont en `sync: false` : leurs valeurs ne vivent que dans le tableau de bord Render.
+Chaque commit sur `main` redéploie l'API publique une fois la CI passée.
+
 ## Architecture
 
 - `controller/CompetitionProxyController` : valide `id` (`^[a-zA-Z0-9_-]+$`) et `season`
