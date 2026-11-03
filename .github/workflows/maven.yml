@@ -14,13 +14,15 @@ on:
   pull_request:
     branches: [ "main" ]
 
-permissions:
-  contents: write
+permissions: {}
 
 jobs:
   build:
 
     runs-on: ubuntu-latest
+    # Écriture nécessaire à l'envoi du graphe de dépendances (Update dependency graph)
+    permissions:
+      contents: write
     env:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
