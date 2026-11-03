@@ -51,6 +51,8 @@ Toujours utiliser `./mvnw`, pas un `mvn` global.
   `football-data.api.base-url` (`isAllowedApiUri`) ; une exception réseau donne un `502`
   sans exposer son message ; le corps d'une erreur de football-data.org ne va que dans
   les logs (seul son statut est renvoyé).
+- **Santé** : seul `/actuator/health` est exposé, sans détails ; il ne doit jamais appeler
+  football-data.org (pas d'indicateur de santé qui consomme le quota).
 - **Les tests ne touchent jamais la vraie API** : `RestTemplate` est mocké avec Mockito et
   le temps est simulé via `Clock`. Ne pas ajouter de test qui consomme le quota.
 
