@@ -29,7 +29,7 @@ flowchart LR
 
 `{id}` accepte un code (`FL1`, `PL`…) ou un identifiant numérique (`2015`). Un `id` qui ne correspond pas à `^[a-zA-Z0-9_-]+$` ou une `season` qui n'est pas une année sur 4 chiffres renvoient `400`.
 
-Un endpoint de santé, `GET /actuator/health`, répond `{"status":"UP"}` pour le contrôle de l'hébergeur. Il n'appelle jamais football-data.org et ne consomme donc pas de quota. Aucun autre endpoint Actuator n'est exposé.
+Un endpoint de santé, `GET /actuator/health`, répond `{"status":"UP"}` pour le contrôle de l'hébergeur. Il n'appelle jamais football-data.org et ne consomme donc pas de quota. Aucun autre endpoint Actuator n'est exposé. Les métriques (Micrometer) sont exclues de la dépendance Actuator : elles ne servent pas et apportaient HdrHistogram 2.2.2, touché par CVE-2026-14686 sans version corrigée.
 
 Le contrat complet (routes, paramètres, schémas des réponses et des erreurs) est décrit en OpenAPI 3 :
 
