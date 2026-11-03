@@ -11,6 +11,7 @@ import org.springframework.test.json.JsonCompareMode;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.client.RestTemplate;
 
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -59,5 +60,15 @@ class ActuatorHealthTest {
     void otherEndpointsAreNotExposed(String endpoint) throws Exception {
         mockMvc.perform(get("/actuator/" + endpoint))
             .andExpect(status().isNotFound());
+    }
+
+    /**
+     * Les métriques Micrometer sont exclues d'Actuator (pom.xml) : elles apportaient HdrHistogram 2.2.2,
+     * touché par CVE-2026-14686 sans version corrigée. Échoue si une dépendance le ramène.
+     */
+    @Test
+    void hdrHistogramIsNotOnTheClasspath() {
+        assertThatThrownBy(() -> Class.forName("org.HdrHistogram.Histogram"))
+            .isInstanceOf(ClassNotFoundException.class);
     }
 }

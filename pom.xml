@@ -59,10 +59,22 @@
 			<artifactId>caffeine</artifactId>
 		</dependency>
 
-		<!-- Endpoint de santé /actuator/health, pour le contrôle de l'hébergeur -->
+		<!-- Endpoint de santé /actuator/health, pour le contrôle de l'hébergeur. Les métriques
+		     (Micrometer) sont exclues : aucune n'est exposée, et elles apportent HdrHistogram 2.2.2,
+		     touché par CVE-2026-14686 sans version corrigée. -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator</artifactId>
+			<exclusions>
+				<exclusion>
+					<groupId>org.springframework.boot</groupId>
+					<artifactId>spring-boot-starter-micrometer-metrics</artifactId>
+				</exclusion>
+				<exclusion>
+					<groupId>io.micrometer</groupId>
+					<artifactId>micrometer-jakarta9</artifactId>
+				</exclusion>
+			</exclusions>
 		</dependency>
 
 		<!-- Spécification OpenAPI (/v3/api-docs) et Swagger UI (/swagger-ui.html) -->
