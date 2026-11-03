@@ -29,6 +29,8 @@ flowchart LR
 
 `{id}` accepte un code (`FL1`, `PL`…) ou un identifiant numérique (`2015`). Un `id` qui ne correspond pas à `^[a-zA-Z0-9_-]+$` ou une `season` qui n'est pas une année sur 4 chiffres renvoient `400`.
 
+Un endpoint de santé, `GET /actuator/health`, répond `{"status":"UP"}` pour le contrôle de l'hébergeur. Il n'appelle jamais football-data.org et ne consomme donc pas de quota. Aucun autre endpoint Actuator n'est exposé.
+
 Le contrat complet (routes, paramètres, schémas des réponses et des erreurs) est décrit en OpenAPI 3 :
 
 - Swagger UI : http://localhost:8080/swagger-ui.html ;
@@ -94,6 +96,7 @@ Toutes les valeurs sont dans `src/main/resources/application.properties` et peuv
 | `football-data.cache.current-season-ttl-seconds` | `300` | Cache de la saison en cours |
 | `football-data.cache.historical-season-ttl-hours` | `24` | Cache des saisons terminées |
 | `app.cors.allowed-origins` | vide (variable `APP_CORS_ALLOWED_ORIGINS`) | Origines autorisées à appeler `/api/**` en `GET` depuis un navigateur, séparées par des virgules (ex. `https://dashboard-foot.example`). Vide : aucune origine externe |
+| `management.endpoints.web.exposure.include` | `health` | Endpoints Actuator exposés : seulement la santé, sans détails |
 | `springdoc.swagger-ui.enabled` | `true` | Publie Swagger UI sur `/swagger-ui.html` |
 | `server.port` | `8080` | Port HTTP |
 
@@ -115,6 +118,7 @@ Les tests ne demandent ni clé d'API ni accès réseau (l'API est simulée) :
   - transmission des statuts d'erreur ;
   - `429` quand le quota est atteint ;
   - découpage des buteurs.
+- **Santé** (`ActuatorHealthTest`) : `/actuator/health` répond `{"status":"UP"}` sans détails ni appel à football-data.org, aucun autre endpoint Actuator n'est exposé.
 - **CORS** (`CorsConfigTest`) : en-tête `Access-Control-Allow-Origin` pour une origine autorisée seulement, `GET` uniquement (requête simple et preflight), rien sans configuration.
 - **Limiteur de débit** : quota dans la fenêtre, libération des places, calcul de `Retry-After`. Le temps est simulé avec une `Clock` injectée.
 

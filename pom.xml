@@ -59,6 +59,12 @@
 			<artifactId>caffeine</artifactId>
 		</dependency>
 
+		<!-- Endpoint de santé /actuator/health, pour le contrôle de l'hébergeur -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-actuator</artifactId>
+		</dependency>
+
 		<!-- Spécification OpenAPI (/v3/api-docs) et Swagger UI (/swagger-ui.html) -->
 		<dependency>
 			<groupId>org.springdoc</groupId>
