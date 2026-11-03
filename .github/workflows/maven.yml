@@ -48,3 +48,36 @@ jobs:
     # Optional: Uploads the full dependency graph to GitHub to improve the quality of Dependabot alerts this repository can receive
     - name: Update dependency graph
       uses: advanced-security/maven-dependency-submission-action@a64327a7329c9939cf675e458452febe1894a70c # v6.0.1
+
+  # Construit l'image Docker sans la publier, pour détecter une casse du Dockerfile.
+  docker:
+    name: Image Docker
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+    - uses: actions/checkout@v7.0.1
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+    - name: Build image
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      with:
+        context: .
+        push: false
+        load: true
+        tags: dashboard-foot-backend:ci
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    # Démarre le conteneur sans clé d'API : seul /actuator/health est vérifié (aucun appel amont).
+    - name: Smoke test
+      run: |
+        docker run -d --name backend -p 8080:8080 dashboard-foot-backend:ci
+        for i in $(seq 1 60); do
+          if curl -fsS http://localhost:8080/actuator/health | grep -q '"UP"'; then
+            echo "Le conteneur répond UP"; exit 0
+          fi
+          sleep 1
+        done
+        docker logs backend
+        exit 1
