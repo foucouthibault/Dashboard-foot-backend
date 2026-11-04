@@ -116,6 +116,16 @@ Toutes les valeurs sont dans `src/main/resources/application.properties` et peuv
 | `springdoc.swagger-ui.enabled` | `true` | Publie Swagger UI sur `/swagger-ui.html` |
 | `server.port` | `8080` | Port HTTP |
 
+## Déploiement
+
+L'API est en ligne sur **https://dashboard-foot-backend.onrender.com** (par exemple [`/api/competitions/FL1`](https://dashboard-foot-backend.onrender.com/api/competitions/FL1)).
+
+- **Hébergeur : [Render](https://render.com), offre gratuite, région Francfort.** Choisi plutôt que Fly.io parce que Render garde une offre gratuite sans carte bancaire, construit l'image directement depuis le `Dockerfile` du dépôt et se configure par un fichier versionné.
+- **Configuration :** [`render.yaml`](./render.yaml) (Blueprint). Il décrit le service Docker, le contrôle de santé sur `/actuator/health` et le port `8080`.
+- **Secrets :** `FOOTBALL_DATA_API_TOKEN` et `APP_CORS_ALLOWED_ORIGINS` sont déclarés en `sync: false`. Leurs valeurs se saisissent dans le tableau de bord Render (*Environment*), jamais dans le dépôt.
+- **Redéployer :** automatique à chaque commit sur la branche suivie par le Blueprint, une fois la CI GitHub passée (`autoDeployTrigger: checksPass`). À la main : *Manual Deploy → Deploy latest commit* dans le tableau de bord. Une modification de `render.yaml` s'applique à la synchronisation suivante du Blueprint.
+- **Mise en veille :** sur l'offre gratuite, le service s'arrête après 15 minutes sans requête. La requête suivante le réveille en environ **1 min 40 s** (96 s mesurées le 3 novembre 2026, contre 0,1 s une fois éveillé) : le frontend doit prévenir l'utilisateur pendant ce délai. Le cache étant en mémoire, il repart vide après chaque réveil.
+
 ## Tests
 
 ```bash
@@ -159,6 +169,7 @@ src/main/java/fr/foucouthibault/dashboardfoot/
     └── FootballDataRateLimiter.java    # Limite de débit à fenêtre glissante
 Dockerfile                              # Image en deux étapes (JDK 25 → JRE 25)
 openapi.json                            # Contrat de l'API, régénéré par les tests
+render.yaml                             # Déploiement sur Render (Blueprint)
 ```
 
 ## Limites connues et pistes
