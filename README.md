@@ -2,6 +2,8 @@
 
 API Spring Boot qui relaie [football-data.org](https://www.football-data.org/) pour le frontend [Dashboard Foot](https://github.com/foucouthibault/Dashboard-foot). Elle garde la clé d'API côté serveur, met les réponses en cache et fait respecter le quota de l'offre gratuite (10 requêtes par minute).
 
+**▶ Démo : https://dashboard-foot-frontend.netlify.app** (API publique : https://dashboard-foot-backend.onrender.com ; le backend gratuit se met en veille, le premier chargement peut prendre jusqu'à 2 minutes)
+
 [![Java CI with Maven](https://github.com/foucouthibault/Dashboard-foot-backend/actions/workflows/maven.yml/badge.svg)](https://github.com/foucouthibault/Dashboard-foot-backend/actions/workflows/maven.yml)
 ![Java](https://img.shields.io/badge/Java-25-f89820?logo=openjdk)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.1-6db33f?logo=springboot)
