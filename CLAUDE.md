@@ -44,7 +44,8 @@ Chaque commit sur `main` redéploie l'API publique une fois la CI passée.
 - `config/CacheConfig` : trois caches Caffeine (statique 60 s, saison en cours 5 min,
   saison terminée 24 h).
 - `config/CorsConfig` : CORS sur `/api/**`, `GET` uniquement, pour les origines de
-  `app.cors.allowed-origins` (vide par défaut : aucune origine externe).
+  `app.cors.allowed-origins` (vide par défaut : aucune origine externe). Expose `Retry-After`,
+  que le frontend lit sur un `429`.
 - `config/OpenApiConfig` : description OpenAPI (springdoc) ; toutes les propriétés des
   réponses y sont obligatoires, un champ qui peut être `null` porte `@Schema(nullable = true)`.
 

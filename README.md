@@ -53,7 +53,7 @@ Les réponses reprennent la structure de football-data.org, réduite aux champs 
 - **Des réponses typées.** Le service désérialise la réponse de l'API dans des records, met ces objets en cache et découpe la liste des buteurs sans repasser par le JSON. Une réponse réussie mais vide ou illisible est traitée comme une panne (`502`) et n'est pas mise en cache.
 - **Des erreurs au format standard.** Le service signale les erreurs par des exceptions, traduites en `ProblemDetail` par `ApiExceptionHandler`, qui étend `ResponseEntityExceptionHandler` pour que les erreurs de Spring MVC (paramètre mal typé…) aient le même format. Un statut d'erreur de l'API (saison hors offre, quota dépassé…) est renvoyé tel quel ; son corps est journalisé mais pas transmis. Une panne réseau donne un `502` sans exposer le message de l'exception.
 - **Un contrat versionné.** springdoc produit la spécification OpenAPI à partir du contrôleur et des records. `OpenApiContractTest` la réécrit dans `openapi.json` à chaque build et échoue si le fichier versionné était différent : un changement de contrat ne passe pas la CI sans que `openapi.json` soit committé. Le frontend vérifie en CI que ses types sont compatibles avec ce fichier. Tous les champs des réponses y sont obligatoires (Jackson sérialise aussi les `null`) ; ceux qui peuvent valoir `null` portent `@Schema(nullable = true)`.
-- **CORS fermé par défaut.** En développement, le frontend passe par le proxy Vite (même origine). En ligne, son domaine doit figurer dans `app.cors.allowed-origins`, et seules les requêtes `GET` sur `/api/**` sont autorisées. Une origine absente de la liste reçoit un `403` sans atteindre le contrôleur, donc sans consommer de quota.
+- **CORS fermé par défaut.** En développement, le frontend passe par le proxy Vite (même origine). En ligne, son domaine doit figurer dans `app.cors.allowed-origins`, et seules les requêtes `GET` sur `/api/**` sont autorisées. L'en-tête `Retry-After` d'un `429` est exposé (`Access-Control-Expose-Headers`) pour que le frontend puisse afficher le délai d'attente. Une origine absente de la liste reçoit un `403` sans atteindre le contrôleur, donc sans consommer de quota.
 - **Sécurité :**
   - le jeton reste côté serveur ;
   - seuls les en-têtes `Accept` et `Accept-Language` du client sont relayés, et aucun en-tête de la réponse de l'API n'est renvoyé au client ;
@@ -147,7 +147,7 @@ Les tests ne demandent ni clé d'API ni accès réseau (l'API est simulée) :
   - `429` quand le quota est atteint ;
   - découpage des buteurs.
 - **Santé** (`ActuatorHealthTest`) : `/actuator/health` répond `{"status":"UP"}` sans détails ni appel à football-data.org, aucun autre endpoint Actuator n'est exposé.
-- **CORS** (`CorsConfigTest`) : en-tête `Access-Control-Allow-Origin` pour une origine autorisée seulement, `GET` uniquement (requête simple et preflight), rien sans configuration.
+- **CORS** (`CorsConfigTest`) : en-tête `Access-Control-Allow-Origin` pour une origine autorisée seulement, `GET` uniquement (requête simple et preflight), `Retry-After` exposé sur un `429`, rien sans configuration.
 - **Limiteur de débit** : quota dans la fenêtre, libération des places, calcul de `Retry-After`. Le temps est simulé avec une `Clock` injectée.
 
 La CI GitHub Actions compile le projet et lance les tests à chaque push et chaque pull request. Elle construit aussi l'image Docker sans la publier, puis vérifie que le conteneur démarre et répond `UP` sur `/actuator/health`. Dependabot maintient les dépendances à jour.
