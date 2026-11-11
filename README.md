@@ -53,7 +53,8 @@ Les réponses reprennent la structure de football-data.org, réduite aux champs 
 - **Des réponses typées.** Le service désérialise la réponse de l'API dans des records, met ces objets en cache et découpe la liste des buteurs sans repasser par le JSON. Une réponse réussie mais vide ou illisible est traitée comme une panne (`502`) et n'est pas mise en cache.
 - **Des erreurs au format standard.** Le service signale les erreurs par des exceptions, traduites en `ProblemDetail` par `ApiExceptionHandler`, qui étend `ResponseEntityExceptionHandler` pour que les erreurs de Spring MVC (paramètre mal typé…) aient le même format. Un statut d'erreur de l'API (saison hors offre, quota dépassé…) est renvoyé tel quel ; son corps est journalisé mais pas transmis. Une panne réseau donne un `502` sans exposer le message de l'exception.
 - **Un contrat versionné.** springdoc produit la spécification OpenAPI à partir du contrôleur et des records. `OpenApiContractTest` la réécrit dans `openapi.json` à chaque build et échoue si le fichier versionné était différent : un changement de contrat ne passe pas la CI sans que `openapi.json` soit committé. Le frontend vérifie en CI que ses types sont compatibles avec ce fichier. Tous les champs des réponses y sont obligatoires (Jackson sérialise aussi les `null`) ; ceux qui peuvent valoir `null` portent `@Schema(nullable = true)`.
-- **CORS fermé par défaut.** En développement, le frontend passe par le proxy Vite (même origine). En ligne, son domaine doit figurer dans `app.cors.allowed-origins`, et seules les requêtes `GET` sur `/api/**` sont autorisées. L'en-tête `Retry-After` d'un `429` est exposé (`Access-Control-Expose-Headers`) pour que le frontend puisse afficher le délai d'attente. Une origine absente de la liste reçoit un `403` sans atteindre le contrôleur, donc sans consommer de quota.
+- **CORS fermé par défaut.** En développement, le frontend passe par le proxy Vite (même origine). En ligne, son domaine doit figurer dans `app.cors.allowed-origins`, et seules les requêtes `GET` sur `/api/**` sont autorisées, avec les en-têtes `Accept`, `Accept-Language` et ceux du suivi Sentry du frontend (`sentry-trace`, `baggage`). L'en-tête `Retry-After` d'un `429` est exposé (`Access-Control-Expose-Headers`) pour que le frontend puisse afficher le délai d'attente. Une origine absente de la liste reçoit un `403` sans atteindre le contrôleur, donc sans consommer de quota.
+- **Erreurs remontées dans Sentry, triées.** Le SDK n'est actif que si `SENTRY_DSN` est renseignée (production) ; en local, en CI et dans les tests, rien n'est envoyé. Partent vers Sentry : les exceptions non gérées, les pannes de football-data.org (`502`) et un `429` renvoyé par football-data.org (le limiteur interne a laissé passer trop d'appels : bug, et risque de blocage de la clé). Ne partent pas : le `429` du limiteur interne (comportement voulu), les requêtes invalides (`400`), les `403` et `404` relayés (saison hors offre, compétition inconnue). Chaque événement porte l'environnement et la version (commit déployé). `SentryEventFilter` retire en-têtes, cookies et adresse du client, en plus de `sentry.send-default-pii=false`.
 - **Sécurité :**
   - le jeton reste côté serveur ;
   - seuls les en-têtes `Accept` et `Accept-Language` du client sont relayés, et aucun en-tête de la réponse de l'API n'est renvoyé au client ;
@@ -114,6 +115,10 @@ Toutes les valeurs sont dans `src/main/resources/application.properties` et peuv
 | `football-data.cache.current-season-ttl-seconds` | `300` | Cache de la saison en cours |
 | `football-data.cache.historical-season-ttl-hours` | `24` | Cache des saisons terminées |
 | `app.cors.allowed-origins` | vide (variable `APP_CORS_ALLOWED_ORIGINS`) | Origines autorisées à appeler `/api/**` en `GET` depuis un navigateur, séparées par des virgules (ex. `https://dashboard-foot.example`). Vide : aucune origine externe |
+| `sentry.dsn` | vide (variable `SENTRY_DSN`) | Projet Sentry qui reçoit les erreurs. Vide : Sentry désactivé |
+| `sentry.environment` | `local` (variable `SENTRY_ENVIRONMENT`) | Environnement affiché dans Sentry (`production` sur Render) |
+| `sentry.release` | variable `RENDER_GIT_COMMIT`, sinon version Maven | Version de l'application dans Sentry |
+| `sentry.send-default-pii` | `false` | Ni adresse IP, ni en-têtes, ni cookies dans les événements |
 | `management.endpoints.web.exposure.include` | `health` | Endpoints Actuator exposés : seulement la santé, sans détails |
 | `springdoc.swagger-ui.enabled` | `true` | Publie Swagger UI sur `/swagger-ui.html` |
 | `server.port` | `8080` | Port HTTP |
@@ -124,7 +129,8 @@ L'API est en ligne sur **https://dashboard-foot-backend.onrender.com** (par exem
 
 - **Hébergeur : [Render](https://render.com), offre gratuite, région Francfort.** Choisi plutôt que Fly.io parce que Render garde une offre gratuite sans carte bancaire, construit l'image directement depuis le `Dockerfile` du dépôt et se configure par un fichier versionné.
 - **Configuration :** [`render.yaml`](./render.yaml) (Blueprint). Il décrit le service Docker, le contrôle de santé sur `/actuator/health` et le port `8080`.
-- **Secrets :** `FOOTBALL_DATA_API_TOKEN` et `APP_CORS_ALLOWED_ORIGINS` sont déclarés en `sync: false`. Leurs valeurs se saisissent dans le tableau de bord Render (*Environment*), jamais dans le dépôt.
+- **Secrets :** `FOOTBALL_DATA_API_TOKEN`, `APP_CORS_ALLOWED_ORIGINS` et `SENTRY_DSN` sont déclarés en `sync: false`. Leurs valeurs se saisissent dans le tableau de bord Render (*Environment*), jamais dans le dépôt.
+- **Sentry :** `SENTRY_ENVIRONMENT=production` est fixé dans `render.yaml`, et Render fournit `RENDER_GIT_COMMIT`, utilisé comme version. Sans `SENTRY_DSN`, le service tourne normalement, sans remonter ses erreurs.
 - **Redéployer :** automatique à chaque commit sur la branche suivie par le Blueprint, une fois la CI GitHub passée (`autoDeployTrigger: checksPass`). À la main : *Manual Deploy → Deploy latest commit* dans le tableau de bord. Une modification de `render.yaml` s'applique à la synchronisation suivante du Blueprint.
 - **Mise en veille :** sur l'offre gratuite, le service s'arrête après 15 minutes sans requête. La requête suivante le réveille en environ **1 min 40 s** (96 s mesurées le 3 novembre 2026, contre 0,1 s une fois éveillé) : le frontend doit prévenir l'utilisateur pendant ce délai. Le cache étant en mémoire, il repart vide après chaque réveil.
 
@@ -147,7 +153,8 @@ Les tests ne demandent ni clé d'API ni accès réseau (l'API est simulée) :
   - `429` quand le quota est atteint ;
   - découpage des buteurs.
 - **Santé** (`ActuatorHealthTest`) : `/actuator/health` répond `{"status":"UP"}` sans détails ni appel à football-data.org, aucun autre endpoint Actuator n'est exposé.
-- **CORS** (`CorsConfigTest`) : en-tête `Access-Control-Allow-Origin` pour une origine autorisée seulement, `GET` uniquement (requête simple et preflight), `Retry-After` exposé sur un `429`, rien sans configuration.
+- **CORS** (`CorsConfigTest`) : en-tête `Access-Control-Allow-Origin` pour une origine autorisée seulement, `GET` uniquement (requête simple et preflight), `Retry-After` exposé sur un `429`, en-têtes `sentry-trace` et `baggage` acceptés et tout autre en-tête refusé, rien sans configuration.
+- **Sentry** (`SentryReportingTest`, `SentryDisabledTest`, `SentryEventFilterTest`) : le transport est remplacé par un enregistreur, aucun événement ne quitte la machine. Sans DSN, rien n'est envoyé ; avec un DSN, les erreurs attendues sont écartées, les autres partent avec environnement et version, sans en-têtes, cookies, adresse IP ni clé.
 - **Limiteur de débit** : quota dans la fenêtre, libération des places, calcul de `Retry-After`. Le temps est simulé avec une `Clock` injectée.
 
 La CI GitHub Actions compile le projet et lance les tests à chaque push et chaque pull request. Elle construit aussi l'image Docker sans la publier, puis vérifie que le conteneur démarre et répond `UP` sur `/actuator/health`. Dependabot maintient les dépendances à jour.
@@ -160,7 +167,9 @@ src/main/java/fr/foucouthibault/dashboardfoot/
 │   ├── AppConfig.java                  # RestTemplate
 │   ├── CacheConfig.java                # Les trois caches Caffeine
 │   ├── CorsConfig.java                 # Origines autorisées (CORS)
-│   └── OpenApiConfig.java              # Description OpenAPI (springdoc)
+│   ├── OpenApiConfig.java              # Description OpenAPI (springdoc)
+│   ├── SentryConfig.java               # Branche le filtre sur le SDK Sentry
+│   └── SentryEventFilter.java          # Tri des erreurs et retrait des données personnelles
 ├── controller/
 │   ├── ApiExceptionHandler.java        # Exceptions traduites en réponses HTTP
 │   └── CompetitionProxyController.java # Routes /api/competitions et validation

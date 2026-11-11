@@ -94,6 +94,28 @@ class CorsConfigTest {
             .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_METHODS, "GET"));
     }
 
+    /** En-têtes de suivi ajoutés par le SDK Sentry du frontend (issue frontend #136). */
+    @Test
+    void preflightAcceptsSentryTracingHeaders() throws Exception {
+        mockMvc.perform(options(ROUTE)
+                .header(HttpHeaders.ORIGIN, ALLOWED)
+                .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "GET")
+                .header(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS, "sentry-trace, baggage"))
+            .andExpect(status().isOk())
+            .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, ALLOWED))
+            .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_HEADERS, "sentry-trace, baggage"));
+    }
+
+    @Test
+    void preflightRejectsAnUnknownHeader() throws Exception {
+        mockMvc.perform(options(ROUTE)
+                .header(HttpHeaders.ORIGIN, ALLOWED)
+                .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "GET")
+                .header(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS, "x-en-tete-inconnu"))
+            .andExpect(status().isForbidden())
+            .andExpect(header().doesNotExist(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN));
+    }
+
     @Test
     void preflightRejectsAnotherMethod() throws Exception {
         mockMvc.perform(options(ROUTE)

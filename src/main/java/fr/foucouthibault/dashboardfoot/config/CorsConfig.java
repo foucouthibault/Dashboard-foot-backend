@@ -17,6 +17,10 @@ import java.util.List;
  * variable {@code APP_CORS_ALLOWED_ORIGINS}). Liste vide (défaut) : aucune règle CORS, donc
  * aucune origine externe autorisée ; le frontend en développement passe par le proxy Vite.
  *
+ * Les en-têtes de requête acceptés sont limités à ceux du frontend : {@code Accept},
+ * {@code Accept-Language}, et les en-têtes de suivi que le SDK Sentry du navigateur ajoute
+ * ({@code sentry-trace}, {@code baggage}) pour relier une erreur du frontend à la requête du backend.
+ *
  * {@code Retry-After} (réponse {@code 429}) est exposé : sans cela, le navigateur le masque au
  * frontend, qui ne peut pas annoncer le délai d'attente.
  *
@@ -27,6 +31,10 @@ import java.util.List;
 public class CorsConfig implements WebMvcConfigurer {
 
     private static final Logger log = LoggerFactory.getLogger(CorsConfig.class);
+
+    /** En-têtes de propagation de trace du SDK Sentry (frontend). */
+    static final String SENTRY_TRACE = "sentry-trace";
+    static final String BAGGAGE = "baggage";
 
     private final List<String> allowedOrigins;
 
@@ -47,6 +55,7 @@ public class CorsConfig implements WebMvcConfigurer {
         registry.addMapping("/api/**")
             .allowedOrigins(allowedOrigins.toArray(String[]::new))
             .allowedMethods("GET")
+            .allowedHeaders(HttpHeaders.ACCEPT, HttpHeaders.ACCEPT_LANGUAGE, SENTRY_TRACE, BAGGAGE)
             .exposedHeaders(HttpHeaders.RETRY_AFTER);
     }
 }
