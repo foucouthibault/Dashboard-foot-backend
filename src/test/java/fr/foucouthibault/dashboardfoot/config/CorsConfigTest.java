@@ -1,6 +1,7 @@
 package fr.foucouthibault.dashboardfoot.config;
 
 import fr.foucouthibault.dashboardfoot.controller.CompetitionProxyController;
+import fr.foucouthibault.dashboardfoot.exception.RateLimitExceededException;
 import fr.foucouthibault.dashboardfoot.model.CompetitionResponse;
 import fr.foucouthibault.dashboardfoot.service.FootballDataProxyService;
 import org.junit.jupiter.api.BeforeEach;
@@ -61,6 +62,18 @@ class CorsConfigTest {
         mockMvc.perform(get(ROUTE).header(HttpHeaders.ORIGIN, "https://autre.example"))
             .andExpect(status().isOk())
             .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "https://autre.example"));
+    }
+
+    /** Sans Access-Control-Expose-Headers, le navigateur masque Retry-After au frontend. */
+    @Test
+    void rateLimitedResponseExposesRetryAfterToAnAllowedOrigin() throws Exception {
+        when(service.getCompetition(anyString(), any())).thenThrow(new RateLimitExceededException(42));
+
+        mockMvc.perform(get(ROUTE).header(HttpHeaders.ORIGIN, ALLOWED))
+            .andExpect(status().isTooManyRequests())
+            .andExpect(header().string(HttpHeaders.RETRY_AFTER, "42"))
+            .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, ALLOWED))
+            .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, HttpHeaders.RETRY_AFTER));
     }
 
     @Test
