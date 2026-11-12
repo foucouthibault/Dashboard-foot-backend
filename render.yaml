@@ -20,3 +20,8 @@ services:
       # URL du frontend déployé, sans « / » final.
       - key: APP_CORS_ALLOWED_ORIGINS
         sync: false
+      # Projet Sentry qui reçoit les erreurs (vide : Sentry désactivé).
+      - key: SENTRY_DSN
+        sync: false
+      - key: SENTRY_ENVIRONMENT
+        value: production

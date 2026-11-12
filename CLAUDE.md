@@ -45,7 +45,13 @@ Chaque commit sur `main` redéploie l'API publique une fois la CI passée.
   saison terminée 24 h).
 - `config/CorsConfig` : CORS sur `/api/**`, `GET` uniquement, pour les origines de
   `app.cors.allowed-origins` (vide par défaut : aucune origine externe). Expose `Retry-After`,
-  que le frontend lit sur un `429`.
+  que le frontend lit sur un `429` ; n'accepte que les en-têtes `Accept`, `Accept-Language`,
+  `sentry-trace` et `baggage`.
+- `config/SentryConfig` + `config/SentryEventFilter` : remontée des erreurs vers Sentry,
+  désactivée sans `SENTRY_DSN`. Le filtre écarte les erreurs attendues (`429` interne, `400`,
+  `403`/`404` relayés) et retire en-têtes, cookies, IP et utilisateur. `ApiExceptionHandler`
+  envoie explicitement ce qu'il gère et qui signale une panne (`502`, `429` de football-data.org) ;
+  le starter ne voit que les exceptions non gérées.
 - `config/OpenApiConfig` : description OpenAPI (springdoc) ; toutes les propriétés des
   réponses y sont obligatoires, un champ qui peut être `null` porte `@Schema(nullable = true)`.
 
@@ -68,6 +74,8 @@ Chaque commit sur `main` redéploie l'API publique une fois la CI passée.
   football-data.org (pas d'indicateur de santé qui consomme le quota).
 - **Les tests ne touchent jamais la vraie API** : `RestTemplate` est mocké avec Mockito et
   le temps est simulé via `Clock`. Ne pas ajouter de test qui consomme le quota.
+- **Sentry ne reçoit rien de personnel ni de secret**, et rien hors production : pas de DSN par
+  défaut ; dans les tests, le transport est remplacé par `RecordingSentryTransport`.
 
 ## Contrat avec le frontend
 

@@ -5,6 +5,7 @@ import fr.foucouthibault.dashboardfoot.exception.RateLimitExceededException;
 import fr.foucouthibault.dashboardfoot.exception.UpstreamErrorException;
 import fr.foucouthibault.dashboardfoot.exception.UpstreamUnavailableException;
 import fr.foucouthibault.dashboardfoot.exception.UpstreamUrlRejectedException;
+import io.sentry.Sentry;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -21,6 +22,10 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
  * d'exception ni corps de réponse de football-data.org n'est renvoyé au client (ils sont
  * journalisés par le service). Les erreurs levées par Spring MVC (paramètre mal typé, route
  * inconnue...) sont traitées par {@link ResponseEntityExceptionHandler}, au même format.
+ *
+ * Sentry ne voit que les exceptions qu'aucun gestionnaire n'a traitées : celles gérées ici et
+ * qui signalent une panne ({@code 502}, {@code 429} de football-data.org) lui sont envoyées
+ * explicitement. {@code Sentry.captureException} ne fait rien quand le SDK est désactivé.
  */
 @RestControllerAdvice
 public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
@@ -44,13 +49,18 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     }
 
     @ExceptionHandler(UpstreamUnavailableException.class)
-    public ResponseEntity<ProblemDetail> upstreamUnavailable() {
+    public ResponseEntity<ProblemDetail> upstreamUnavailable(UpstreamUnavailableException e) {
+        Sentry.captureException(e);
         return problem(HttpStatus.BAD_GATEWAY, "Échec de l'appel à l'API football-data.org");
     }
 
-    /** Le statut de football-data.org est conservé (403 saison hors abonnement, 404...). */
+    /** Le statut de football-data.org est conservé (403 saison hors abonnement, 404, 429...). */
     @ExceptionHandler(UpstreamErrorException.class)
     public ResponseEntity<ProblemDetail> upstreamError(UpstreamErrorException e) {
+        // Seul le 429 est une anomalie de notre côté ; SentryEventFilter écarte les autres statuts.
+        if (e.getStatus().isSameCodeAs(HttpStatus.TOO_MANY_REQUESTS)) {
+            Sentry.captureException(e);
+        }
         return problem(e.getStatus(), "L'API football-data.org a répondu par une erreur");
     }
 

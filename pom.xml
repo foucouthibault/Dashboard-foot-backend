@@ -43,6 +43,7 @@
 		     3.2.4 attend les annotations 2.22. À retirer en même temps que jackson-bom.version. -->
 		<jackson-2-bom.version>2.22.4</jackson-2-bom.version>
 		<springdoc.version>3.2.0</springdoc.version>
+		<sentry.version>8.62.0</sentry.version>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -82,6 +83,14 @@
 			<groupId>org.springdoc</groupId>
 			<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
 			<version>${springdoc.version}</version>
+		</dependency>
+
+		<!-- Remontée des erreurs vers Sentry (désactivée sans SENTRY_DSN). Starter dédié à
+		     Spring Boot 4 : sentry-spring-boot-starter-jakarta vise Spring Boot 3. -->
+		<dependency>
+			<groupId>io.sentry</groupId>
+			<artifactId>sentry-spring-boot-4-starter</artifactId>
+			<version>${sentry.version}</version>
 		</dependency>
 
 		<dependency>
