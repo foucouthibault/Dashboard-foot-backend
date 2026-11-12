@@ -119,6 +119,7 @@ Toutes les valeurs sont dans `src/main/resources/application.properties` et peuv
 | `sentry.environment` | `local` (variable `SENTRY_ENVIRONMENT`) | Environnement affiché dans Sentry (`production` sur Render) |
 | `sentry.release` | variable `RENDER_GIT_COMMIT`, sinon version Maven | Version de l'application dans Sentry |
 | `sentry.send-default-pii` | `false` | Ni adresse IP, ni en-têtes, ni cookies dans les événements |
+| `logging.structured.format.console` | vide (variable `LOG_FORMAT`) | Format des logs : vide pour le texte lisible, `logstash` pour une ligne JSON par événement (production, voir [Logs](#logs)) |
 | `management.endpoints.web.exposure.include` | `health` | Endpoints Actuator exposés : seulement la santé, sans détails |
 | `springdoc.swagger-ui.enabled` | `true` | Publie Swagger UI sur `/swagger-ui.html` |
 | `server.port` | `8080` | Port HTTP |
@@ -134,6 +135,33 @@ L'API est en ligne sur **https://dashboard-foot-backend.onrender.com** (par exem
 - **Redéployer :** automatique à chaque commit sur la branche suivie par le Blueprint, une fois la CI GitHub passée (`autoDeployTrigger: checksPass`). À la main : *Manual Deploy → Deploy latest commit* dans le tableau de bord. Une modification de `render.yaml` s'applique à la synchronisation suivante du Blueprint.
 - **Mise en veille :** sur l'offre gratuite, le service s'arrête après 15 minutes sans requête. La requête suivante le réveille en environ **1 min 40 s** (96 s mesurées le 3 novembre 2026, contre 0,1 s une fois éveillé) : le frontend doit prévenir l'utilisateur pendant ce délai. Le cache étant en mémoire, il repart vide après chaque réveil.
 
+## Logs
+
+En local et dans les tests, les logs restent au format texte de Spring Boot. Sur Render, `LOG_FORMAT=logstash` (fixé dans `render.yaml`) produit **une ligne JSON par événement** :
+
+```json
+{"@timestamp":"2026-11-12T22:46:24.54+01:00","level":"WARN","logger_name":"fr.foucouthibault.dashboardfoot.service.FootballDataProxyService","message":"football-data.org a répondu 403 FORBIDDEN pour https://api.football-data.org/v4/competitions/FL1: …","requestId":"0f6c1d1e-…","event":"amont_erreur","upstreamStatus":403}
+```
+
+- **`requestId`** : identifiant de la requête, présent sur toutes les lignes écrites pendant celle-ci. Il est renvoyé au client dans l'en-tête `X-Request-Id` (lisible par le frontend en CORS). Un `X-Request-Id` entrant est repris s'il fait au plus 64 caractères parmi lettres, chiffres, `.`, `_` et `-` ; sinon un UUID est généré.
+- **`event`** : nom stable d'un événement notable, indépendant du texte du message :
+
+| `event` | Niveau | Champs | Quand |
+|---|---|---|---|
+| `cache_manque` | `INFO` | `cache`, `cacheKey` | Réponse absente du cache : suit un appel à football-data.org ou un refus du limiteur. `INFO` car le volume est borné par le quota (10 appels/minute) |
+| `quota_atteint` | `WARN` | `retryAfter` (secondes) | Le limiteur interne refuse l'appel, le client reçoit un `429` |
+| `amont_erreur` | `WARN` | `upstreamStatus` | football-data.org a répondu par une erreur (`403`, `404`, `429`…), relayée au client |
+| `amont_indisponible` | `WARN` | `stack_trace` | Panne réseau, réponse vide ou illisible, le client reçoit un `502` |
+| `url_refusee` | `WARN` | | URL sortante rejetée par le contrôle SSRF |
+
+**Rien de sensible** : ni clé d'API, ni adresse IP, ni en-têtes de requête. Les URL et corps de réponse amont sont débarrassés de leurs caractères de contrôle avant d'être écrits.
+
+**Rechercher dans Render** (*Logs*, champ de recherche plein texte) :
+
+- toutes les saturations du quota : `"event":"quota_atteint"` ;
+- les erreurs de football-data.org : `"event":"amont_erreur"`, ou un statut précis : `"upstreamStatus":429` ;
+- toutes les lignes d'une requête signalée par le frontend : `"requestId":"<valeur de X-Request-Id>"`.
+
 ## Tests
 
 ```bash
@@ -144,6 +172,7 @@ Les tests ne demandent ni clé d'API ni accès réseau (l'API est simulée) :
 
 - **Contrat OpenAPI** (`OpenApiContractTest`) : `openapi.json` à jour, 4 routes, paramètres, erreurs en `ProblemDetail`, champs obligatoires et `nullable`, Swagger UI servie.
 - **Couche HTTP** (`CompetitionProxyHttpTest`) : statut, en-têtes et corps vus par le frontend sur les 4 routes, dont les champs renvoyés et ceux qui sont écartés.
+- **Logs** (`StructuredLoggingTest`, `FootballDataProxyServiceEventsTest`, `RequestIdFilterTest`) : en format JSON, chaque ligne d'une requête est un objet JSON avec son `requestId`, sans clé d'API ni adresse IP ; chaque événement nommé est produit avec ses champs ; un `X-Request-Id` entrant dangereux ou trop long est remplacé.
 - **Contrôleur** : rejet des identifiants invalides (caractères spéciaux, `/`, injection SQL, remontée de répertoire) et transmission des paramètres.
 - **Service** :
   - utilisation du cache, et une clé de cache par saison ;
@@ -153,7 +182,7 @@ Les tests ne demandent ni clé d'API ni accès réseau (l'API est simulée) :
   - `429` quand le quota est atteint ;
   - découpage des buteurs.
 - **Santé** (`ActuatorHealthTest`) : `/actuator/health` répond `{"status":"UP"}` sans détails ni appel à football-data.org, aucun autre endpoint Actuator n'est exposé.
-- **CORS** (`CorsConfigTest`) : en-tête `Access-Control-Allow-Origin` pour une origine autorisée seulement, `GET` uniquement (requête simple et preflight), `Retry-After` exposé sur un `429`, en-têtes `sentry-trace` et `baggage` acceptés et tout autre en-tête refusé, rien sans configuration.
+- **CORS** (`CorsConfigTest`) : en-tête `Access-Control-Allow-Origin` pour une origine autorisée seulement, `GET` uniquement (requête simple et preflight), `Retry-After` et `X-Request-Id` exposés, en-têtes `sentry-trace` et `baggage` acceptés et tout autre en-tête refusé, rien sans configuration.
 - **Sentry** (`SentryReportingTest`, `SentryDisabledTest`, `SentryEventFilterTest`) : le transport est remplacé par un enregistreur, aucun événement ne quitte la machine. Sans DSN, rien n'est envoyé ; avec un DSN, les erreurs attendues sont écartées, les autres partent avec environnement et version, sans en-têtes, cookies, adresse IP ni clé.
 - **Limiteur de débit** : quota dans la fenêtre, libération des places, calcul de `Retry-After`. Le temps est simulé avec une `Clock` injectée.
 
@@ -168,6 +197,7 @@ src/main/java/fr/foucouthibault/dashboardfoot/
 │   ├── CacheConfig.java                # Les trois caches Caffeine
 │   ├── CorsConfig.java                 # Origines autorisées (CORS)
 │   ├── OpenApiConfig.java              # Description OpenAPI (springdoc)
+│   ├── RequestIdFilter.java            # requestId dans le MDC et l'en-tête X-Request-Id
 │   ├── SentryConfig.java               # Branche le filtre sur le SDK Sentry
 │   └── SentryEventFilter.java          # Tri des erreurs et retrait des données personnelles
 ├── controller/

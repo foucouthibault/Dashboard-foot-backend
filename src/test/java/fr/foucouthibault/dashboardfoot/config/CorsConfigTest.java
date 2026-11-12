@@ -14,6 +14,8 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.hasItem;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
@@ -73,7 +75,19 @@ class CorsConfigTest {
             .andExpect(status().isTooManyRequests())
             .andExpect(header().string(HttpHeaders.RETRY_AFTER, "42"))
             .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, ALLOWED))
-            .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, HttpHeaders.RETRY_AFTER));
+            .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS,
+                HttpHeaders.RETRY_AFTER + ", " + RequestIdFilter.HEADER));
+    }
+
+    /** Le frontend lit X-Request-Id pour citer la requête (logs du backend) dans ses erreurs. */
+    @Test
+    void responseExposesTheRequestIdToAnAllowedOrigin() throws Exception {
+        mockMvc.perform(get(ROUTE).header(HttpHeaders.ORIGIN, ALLOWED).header(RequestIdFilter.HEADER, "id-du-front"))
+            .andExpect(status().isOk())
+            .andExpect(header().string(RequestIdFilter.HEADER, "id-du-front"))
+            .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, ALLOWED))
+            .andExpect(header().stringValues(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS,
+                hasItem(containsString(RequestIdFilter.HEADER))));
     }
 
     @Test

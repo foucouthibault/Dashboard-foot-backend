@@ -36,6 +36,10 @@ import java.util.regex.Pattern;
  * Le cache est piloté manuellement via CacheManager pour choisir la bonne durée de vie
  * selon que la saison demandée est terminée ou en cours ; il stocke les réponses typées.
  * Les erreurs sont signalées par des exceptions, traduites en HTTP par ApiExceptionHandler.
+ *
+ * Les lignes de log notables portent un champ {@code event} au nom stable (constantes
+ * {@code EVENT_*}), visible dans les logs JSON de production : on peut compter ou filtrer un
+ * type d'événement sans dépendre du texte du message, qui reste libre.
  */
 @Service
 public class FootballDataProxyService {
@@ -46,6 +50,14 @@ public class FootballDataProxyService {
     // ensuite localement selon le `limit` demandé par le client, pour qu'un changement
     // de `limit` côté frontend ne déclenche jamais un nouvel appel amont.
     private static final int SCORERS_MAX_LIMIT = 50;
+
+    /** Nom du champ des événements nommés dans les logs structurés. */
+    static final String EVENT = "event";
+    static final String EVENT_QUOTA_ATTEINT = "quota_atteint";
+    static final String EVENT_AMONT_ERREUR = "amont_erreur";
+    static final String EVENT_AMONT_INDISPONIBLE = "amont_indisponible";
+    static final String EVENT_URL_REFUSEE = "url_refusee";
+    static final String EVENT_CACHE_MANQUE = "cache_manque";
 
     private static final Pattern CONTROL_CHARACTERS = Pattern.compile("\\p{Cntrl}");
 
@@ -139,6 +151,14 @@ public class FootballDataProxyService {
             }
         }
 
+        // INFO plutôt que DEBUG : chaque manque mène à un appel sortant (au plus 10 par minute) ou à
+        // un refus du limiteur, donc le volume reste borné, et ces lignes comptent les appels amont.
+        log.atInfo()
+            .addKeyValue(EVENT, EVENT_CACHE_MANQUE)
+            .addKeyValue("cache", cacheName)
+            .addKeyValue("cacheKey", forLog(key))
+            .log("Absent du cache {} : {}", cacheName, forLog(key));
+
         // fetch ne renvoie qu'une réponse réussie et lisible : toute erreur lève une exception
         // et n'est donc jamais mise en cache (une erreur transitoire ne reste pas figée).
         T response = fetch(url, incomingHeaders, type);
@@ -151,7 +171,10 @@ public class FootballDataProxyService {
     private <T> T fetch(String url, HttpHeaders incomingHeaders, Class<T> type) {
         if (!rateLimiter.tryAcquire()) {
             long retryAfter = rateLimiter.secondsUntilNextSlot();
-            log.warn("Quota interne d'appels à football-data.org atteint, requête refusée ({}s avant réessai) pour {}", retryAfter, forLog(url));
+            log.atWarn()
+                .addKeyValue(EVENT, EVENT_QUOTA_ATTEINT)
+                .addKeyValue("retryAfter", retryAfter)
+                .log("Quota interne d'appels à football-data.org atteint, requête refusée ({}s avant réessai) pour {}", retryAfter, forLog(url));
             throw new RateLimitExceededException(retryAfter);
         }
 
@@ -159,11 +182,13 @@ public class FootballDataProxyService {
         try {
             targetUri = URI.create(url);
         } catch (IllegalArgumentException e) {
-            log.warn("Échec de l'appel à {}", forLog(url), e);
+            logUnavailable("Échec de l'appel à {}", url, e);
             throw new UpstreamUnavailableException(e);
         }
         if (!isAllowedApiUri(targetUri)) {
-            log.warn("URL sortante refusée (contrôle SSRF): {}", forLog(url));
+            log.atWarn()
+                .addKeyValue(EVENT, EVENT_URL_REFUSEE)
+                .log("URL sortante refusée (contrôle SSRF): {}", forLog(url));
             throw new UpstreamUrlRejectedException();
         }
 
@@ -175,10 +200,13 @@ public class FootballDataProxyService {
             // L'API a répondu avec un statut d'erreur (saison hors plan, quota atteint...) :
             // on transmet ce statut plutôt que de le masquer en 502 générique. Son message ne
             // va que dans les logs.
-            log.warn("football-data.org a répondu {} pour {}: {}", e.getStatusCode(), forLog(url), forLog(e.getResponseBodyAsString()));
+            log.atWarn()
+                .addKeyValue(EVENT, EVENT_AMONT_ERREUR)
+                .addKeyValue("upstreamStatus", e.getStatusCode().value())
+                .log("football-data.org a répondu {} pour {}: {}", e.getStatusCode(), forLog(url), forLog(e.getResponseBodyAsString()));
             throw new UpstreamErrorException(e.getStatusCode());
         } catch (RuntimeException e) {
-            log.warn("Échec de l'appel à {}", forLog(url), e);
+            logUnavailable("Échec de l'appel à {}", url, e);
             throw new UpstreamUnavailableException(e);
         }
         return read(body, type, url);
@@ -207,14 +235,22 @@ public class FootballDataProxyService {
         try {
             value = body == null ? null : objectMapper.readValue(body, type);
         } catch (JacksonException e) {
-            log.warn("Réponse illisible de football-data.org pour {}", forLog(url), e);
+            logUnavailable("Réponse illisible de football-data.org pour {}", url, e);
             throw new UpstreamUnavailableException(e);
         }
         if (value == null) {
-            log.warn("Réponse vide de football-data.org pour {}", forLog(url));
+            logUnavailable("Réponse vide de football-data.org pour {}", url, null);
             throw new UpstreamUnavailableException(null);
         }
         return value;
+    }
+
+    /** Panne amont (réseau, réponse vide ou illisible) : le client recevra un 502. */
+    private static void logUnavailable(String message, String url, Exception cause) {
+        log.atWarn()
+            .addKeyValue(EVENT, EVENT_AMONT_INDISPONIBLE)
+            .setCause(cause)
+            .log(message, forLog(url));
     }
 
     /**
