@@ -45,13 +45,17 @@ Chaque commit sur `main` redéploie l'API publique une fois la CI passée.
   saison terminée 24 h).
 - `config/CorsConfig` : CORS sur `/api/**`, `GET` uniquement, pour les origines de
   `app.cors.allowed-origins` (vide par défaut : aucune origine externe). Expose `Retry-After`,
-  que le frontend lit sur un `429` ; n'accepte que les en-têtes `Accept`, `Accept-Language`,
+  que le frontend lit sur un `429`, et `X-Request-Id` ; n'accepte que les en-têtes `Accept`, `Accept-Language`,
   `sentry-trace` et `baggage`.
 - `config/SentryConfig` + `config/SentryEventFilter` : remontée des erreurs vers Sentry,
   désactivée sans `SENTRY_DSN`. Le filtre écarte les erreurs attendues (`429` interne, `400`,
   `403`/`404` relayés) et retire en-têtes, cookies, IP et utilisateur. `ApiExceptionHandler`
   envoie explicitement ce qu'il gère et qui signale une panne (`502`, `429` de football-data.org) ;
   le starter ne voit que les exceptions non gérées.
+- `config/RequestIdFilter` : met un `requestId` dans le MDC (repris d'un `X-Request-Id` sûr,
+  sinon UUID) et le renvoie dans `X-Request-Id`. Logs JSON en production (`LOG_FORMAT=logstash`) ;
+  les lignes notables du service portent un champ `event` stable (`quota_atteint`,
+  `amont_erreur`…), décrit dans le README : ne pas le renommer sans mettre la doc à jour.
 - `config/OpenApiConfig` : description OpenAPI (springdoc) ; toutes les propriétés des
   réponses y sont obligatoires, un champ qui peut être `null` porte `@Schema(nullable = true)`.
 

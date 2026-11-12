@@ -21,8 +21,9 @@ import java.util.List;
  * {@code Accept-Language}, et les en-têtes de suivi que le SDK Sentry du navigateur ajoute
  * ({@code sentry-trace}, {@code baggage}) pour relier une erreur du frontend à la requête du backend.
  *
- * {@code Retry-After} (réponse {@code 429}) est exposé : sans cela, le navigateur le masque au
- * frontend, qui ne peut pas annoncer le délai d'attente.
+ * {@code Retry-After} (réponse {@code 429}) et {@code X-Request-Id} sont exposés : sans cela, le
+ * navigateur les masque au frontend, qui ne pourrait ni annoncer le délai d'attente ni citer
+ * l'identifiant de la requête (voir {@link RequestIdFilter}) pour la retrouver dans les logs.
  *
  * Avec une règle, Spring répond {@code 403} à une requête dont l'origine n'est pas dans la
  * liste, avant d'atteindre le contrôleur : elle ne consomme pas le quota de football-data.org.
@@ -56,6 +57,6 @@ public class CorsConfig implements WebMvcConfigurer {
             .allowedOrigins(allowedOrigins.toArray(String[]::new))
             .allowedMethods("GET")
             .allowedHeaders(HttpHeaders.ACCEPT, HttpHeaders.ACCEPT_LANGUAGE, SENTRY_TRACE, BAGGAGE)
-            .exposedHeaders(HttpHeaders.RETRY_AFTER);
+            .exposedHeaders(HttpHeaders.RETRY_AFTER, RequestIdFilter.HEADER);
     }
 }

@@ -25,3 +25,6 @@ services:
         sync: false
       - key: SENTRY_ENVIRONMENT
         value: production
+      # Logs JSON (une ligne par événement, avec requestId) : voir la section « Logs » du README.
+      - key: LOG_FORMAT
+        value: logstash
