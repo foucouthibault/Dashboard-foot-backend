@@ -170,6 +170,22 @@ En local et dans les tests, les logs restent au format texte de Spring Boot. Sur
 - les erreurs de football-data.org : `"event":"amont_erreur"`, ou un statut précis : `"upstreamStatus":429` ;
 - toutes les lignes d'une requête signalée par le frontend : `"requestId":"<valeur de X-Request-Id>"`.
 
+Si ces recherches ne renvoient rien alors que le service a du trafic, vérifier que les lignes sont bien en JSON : `LOG_FORMAT` doit valoir `logstash` dans *Environment* du service. Une valeur de `render.yaml` n'est appliquée qu'à la synchronisation du Blueprint.
+
+### Mesurer la consommation du quota
+
+Mesure à refaire après chaque évolution du cache, pour la comparer à la mesure de départ consignée dans l'issue #74. Render garde les logs de l'offre gratuite 7 jours : la mesure porte donc sur une semaine glissante.
+
+1. **Appels sortants par jour.** Compter les lignes `"event":"cache_manque"`. Chaque ligne correspond à un appel à football-data.org, ou à un refus du limiteur quand une ligne `quota_atteint` suit dans la même requête.
+2. **`429` internes par jour.** Compter les lignes `"event":"quota_atteint"`.
+3. **Clés les plus demandées.** Regrouper les lignes `cache_manque` par champ `cache` puis `cacheKey` (par exemple `footballData` / `competition_PL`).
+4. **Appels par visite.** Le trafic étant faible, rapporter les appels sortants au nombre de visites : une visite produit une salve de manques en quelques secondes. Les logs de requêtes HTTP ne sont pas disponibles sur l'offre gratuite.
+5. **Mises en veille.** Compter les lignes `Started DashboardFootApplication`, puis retirer les redémarrages dus aux déploiements (*Events* du service). Le reste correspond aux réveils, et chaque réveil vide le cache. Un `quota_atteint` dans la minute qui suit un démarrage signale un cache vide qui se remplit.
+
+Le tableau de bord de Render ne fait que filtrer les logs, sans les compter. Pour compter, utiliser l'API ou le serveur MCP de Render (`list_logs` avec un filtre `text` comme `*cache_manque*`, page par page, et `list_events` pour les déploiements).
+
+Avant le 15 novembre 2026, les logs de production étaient en texte, faute de `LOG_FORMAT` sur le service. Pour relire cette période, rechercher le texte des messages : `Absent du cache` (`cache_manque`) et `Quota interne` (`quota_atteint`).
+
 ## Tests
 
 ```bash
