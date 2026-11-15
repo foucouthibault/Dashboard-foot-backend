@@ -2,7 +2,7 @@
 
 API Spring Boot qui relaie [football-data.org](https://www.football-data.org/) pour le frontend [Dashboard Foot](https://github.com/foucouthibault/Dashboard-foot). Elle garde la clé d'API côté serveur, met les réponses en cache et fait respecter le quota de l'offre gratuite (10 requêtes par minute).
 
-**▶ Démo : https://dashboard-foot-frontend.netlify.app** (API publique : https://dashboard-foot-backend.onrender.com ; le backend gratuit se met en veille, le premier chargement peut prendre jusqu'à 2 minutes)
+**▶ Démo : https://dashboard-foot-frontend.netlify.app** (API publique : https://dashboard-foot-backend.onrender.com  ; une surveillance toutes les 5 minutes empêche le backend gratuit de se mettre en veille)
 
 [![Java CI with Maven](https://github.com/foucouthibault/Dashboard-foot-backend/actions/workflows/maven.yml/badge.svg)](https://github.com/foucouthibault/Dashboard-foot-backend/actions/workflows/maven.yml)
 ![Java](https://img.shields.io/badge/Java-25-f89820?logo=openjdk)
@@ -133,7 +133,15 @@ L'API est en ligne sur **https://dashboard-foot-backend.onrender.com** (par exem
 - **Secrets :** `FOOTBALL_DATA_API_TOKEN`, `APP_CORS_ALLOWED_ORIGINS` et `SENTRY_DSN` sont déclarés en `sync: false`. Leurs valeurs se saisissent dans le tableau de bord Render (*Environment*), jamais dans le dépôt.
 - **Sentry :** `SENTRY_ENVIRONMENT=production` est fixé dans `render.yaml`, et Render fournit `RENDER_GIT_COMMIT`, utilisé comme version. Sans `SENTRY_DSN`, le service tourne normalement, sans remonter ses erreurs.
 - **Redéployer :** automatique à chaque commit sur la branche suivie par le Blueprint, une fois la CI GitHub passée (`autoDeployTrigger: checksPass`). À la main : *Manual Deploy → Deploy latest commit* dans le tableau de bord. Une modification de `render.yaml` s'applique à la synchronisation suivante du Blueprint.
-- **Mise en veille :** sur l'offre gratuite, le service s'arrête après 15 minutes sans requête. La requête suivante le réveille en environ **1 min 40 s** (96 s mesurées le 3 novembre 2026, contre 0,1 s une fois éveillé) : le frontend doit prévenir l'utilisateur pendant ce délai. Le cache étant en mémoire, il repart vide après chaque réveil.
+- **Mise en veille :** sur l'offre gratuite, le service s'arrête après 15 minutes sans requête. La requête suivante le réveille en environ **1 min 40 s** (96 s mesurées le 3 novembre 2026, contre 0,1 s une fois éveillé). Le contrôle de disponibilité ci-dessous interroge le backend toutes les 5 minutes, ce qui l'empêche de s'endormir : une démo ne doit pas faire attendre son premier visiteur. Un service allumé en permanence consomme au plus 744 h par mois, dans les 750 h gratuites de Render, à condition qu'il soit le seul service gratuit du compte. Le backend redémarre toutefois à chaque déploiement : le frontend prévient donc toujours l'utilisateur quand une réponse tarde. Le cache étant en mémoire, il repart vide après chaque redémarrage.
+- **Surveillance de la disponibilité : [UptimeRobot](https://uptimerobot.com), offre gratuite.** Choisi pour son offre gratuite sans carte bancaire, qui contrôle toutes les 5 minutes, vérifie un mot-clé dans la réponse et alerte par mail. Better Stack aurait aussi convenu. Deux contrôles HTTPS, toutes les 5 minutes, avec une alerte par mail à la panne puis au retour :
+
+  | Contrôle | URL | Attendu |
+  |---|---|---|
+  | Backend | `https://dashboard-foot-backend.onrender.com/actuator/health` | `200` et le mot-clé `"status":"UP"` |
+  | Frontend | `https://dashboard-foot-frontend.netlify.app/` | `200` et le mot-clé `<div id="app">` |
+
+  Le code `200` seul ne suffit pas : une page d'erreur ou d'attente d'un hébergeur peut le renvoyer, et Netlify répond `200` même pour une page inexistante (renvoi de l'appli monopage vers `index.html`). Le contrôle de santé n'appelle jamais football-data.org : il ne consomme aucun quota. **Aucune route `/api/**` n'est surveillée**, car chaque contrôle en consommerait.
 
 ## Logs
 
