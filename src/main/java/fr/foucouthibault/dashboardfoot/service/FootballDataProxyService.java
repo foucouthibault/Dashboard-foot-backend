@@ -84,7 +84,7 @@ public class FootballDataProxyService {
 
     public CompetitionResponse getCompetition(String id, HttpHeaders headers) {
         String url = apiBaseUrl + "/competitions/" + id;
-        return cached(CacheConfig.STATIC_CACHE, "competition_" + id, url, headers, CompetitionResponse.class);
+        return cached(CacheConfig.COMPETITIONS_CACHE, "competition_" + id, url, headers, CompetitionResponse.class);
     }
 
     public StandingsResponse getStandings(String id, String season, HttpHeaders headers) {
@@ -142,15 +142,35 @@ public class FootballDataProxyService {
         }
     }
 
+    /**
+     * Sert la réponse depuis le cache, ou la charge une seule fois par clé : avec Caffeine,
+     * {@link Cache#get(Object, java.util.concurrent.Callable)} est atomique, donc des requêtes
+     * simultanées sur une clé absente attendent le chargement en cours au lieu de lancer chacune
+     * leur appel sortant (accueil qui demande ses 6 compétitions, deux visiteurs en même temps).
+     * Un hit ne passe ni par le limiteur ni par l'API.
+     */
     private <T> T cached(String cacheName, String key, String url, HttpHeaders incomingHeaders, Class<T> type) {
         Cache cache = cacheManager.getCache(cacheName);
-        if (cache != null) {
-            T hit = cache.get(key, type);
-            if (hit != null) {
-                return hit;
+        if (cache == null) {
+            return load(cacheName, key, url, incomingHeaders, type);
+        }
+        try {
+            // fetch ne renvoie qu'une réponse réussie et lisible : toute erreur lève une exception
+            // pendant le chargement, et Caffeine ne garde alors rien en cache (une erreur
+            // transitoire ne reste pas figée).
+            return cache.get(key, () -> load(cacheName, key, url, incomingHeaders, type));
+        } catch (Cache.ValueRetrievalException e) {
+            // Spring enveloppe l'exception du chargement : on relance l'originale pour
+            // qu'ApiExceptionHandler garde son statut (429, statut amont, 502…).
+            switch (e.getCause()) {
+                case RuntimeException cause -> throw cause;
+                case Error error -> throw error;
+                case null, default -> throw new UpstreamUnavailableException(e.getCause());
             }
         }
+    }
 
+    private <T> T load(String cacheName, String key, String url, HttpHeaders incomingHeaders, Class<T> type) {
         // INFO plutôt que DEBUG : chaque manque mène à un appel sortant (au plus 10 par minute) ou à
         // un refus du limiteur, donc le volume reste borné, et ces lignes comptent les appels amont.
         log.atInfo()
@@ -158,14 +178,7 @@ public class FootballDataProxyService {
             .addKeyValue("cache", cacheName)
             .addKeyValue("cacheKey", forLog(key))
             .log("Absent du cache {} : {}", cacheName, forLog(key));
-
-        // fetch ne renvoie qu'une réponse réussie et lisible : toute erreur lève une exception
-        // et n'est donc jamais mise en cache (une erreur transitoire ne reste pas figée).
-        T response = fetch(url, incomingHeaders, type);
-        if (cache != null) {
-            cache.put(key, response);
-        }
-        return response;
+        return fetch(url, incomingHeaders, type);
     }
 
     private <T> T fetch(String url, HttpHeaders incomingHeaders, Class<T> type) {

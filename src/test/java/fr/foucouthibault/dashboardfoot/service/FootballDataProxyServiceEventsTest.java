@@ -56,7 +56,7 @@ class FootballDataProxyServiceEventsTest {
         logger.addAppender(appender);
 
         CaffeineCacheManager cacheManager = new CaffeineCacheManager(
-            CacheConfig.STATIC_CACHE, CacheConfig.CURRENT_SEASON_CACHE, CacheConfig.HISTORICAL_SEASON_CACHE);
+            CacheConfig.COMPETITIONS_CACHE, CacheConfig.STATIC_CACHE, CacheConfig.CURRENT_SEASON_CACHE, CacheConfig.HISTORICAL_SEASON_CACHE);
         service = new FootballDataProxyService(restTemplate, cacheManager, rateLimiter);
         setField("apiBaseUrl", "https://api.football-data.org/v4");
         setField("apiToken", "cle-secrete-de-test");
@@ -144,7 +144,7 @@ class FootballDataProxyServiceEventsTest {
         service.getCompetition("FL1", new HttpHeaders());
 
         assertThat(event("cache_manque"))
-            .containsEntry("cache", CacheConfig.STATIC_CACHE)
+            .containsEntry("cache", CacheConfig.COMPETITIONS_CACHE)
             .containsEntry("cacheKey", "competition_FL1");
     }
 

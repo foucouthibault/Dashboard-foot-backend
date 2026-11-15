@@ -19,7 +19,7 @@
   "paths" : {
     "/api/competitions/{id}" : {
       "get" : {
-        "description" : "Nom, code et logo de la compétition. Cache : 60 s.",
+        "description" : "Nom, code et logo de la compétition. Cache : 24 h.",
         "operationId" : "proxyCompetition",
         "parameters" : [ {
           "description" : "Code (FL1, PL…) ou identifiant numérique de la compétition",
@@ -219,7 +219,7 @@
     },
     "/api/competitions/{id}/scorers" : {
       "get" : {
-        "description" : "Meilleurs buteurs. Les 50 premiers sont mis en cache puis découpés selon limit : changer de limit ne consomme pas de quota. Cache : 5 min pour la saison en cours, 24 h pour une saison terminée.",
+        "description" : "Meilleurs buteurs. Les 50 premiers sont mis en cache puis découpés selon limit : changer de limit ne consomme pas de quota. Cache : 5 min pour la saison en cours, 30 jours pour une saison terminée.",
         "operationId" : "proxyScorers",
         "parameters" : [ {
           "description" : "Code (FL1, PL…) ou identifiant numérique de la compétition",
@@ -339,7 +339,7 @@
     },
     "/api/competitions/{id}/standings" : {
       "get" : {
-        "description" : "Classements général, domicile et extérieur (par poule le cas échéant). Cache : 5 min pour la saison en cours, 24 h pour une saison terminée.",
+        "description" : "Classements général, domicile et extérieur (par poule le cas échéant). Cache : 5 min pour la saison en cours, 30 jours pour une saison terminée.",
         "operationId" : "proxyStandings",
         "parameters" : [ {
           "description" : "Code (FL1, PL…) ou identifiant numérique de la compétition",

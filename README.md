@@ -15,7 +15,7 @@ API Spring Boot qui relaie [football-data.org](https://www.football-data.org/) p
 flowchart LR
     F["Frontend Vue 3"] -- "GET /api/competitions/..." --> C["CompetitionProxyController<br/>validation des paramètres"]
     C --> S["FootballDataProxyService"]
-    S -- "hit" --> K[("Cache Caffeine<br/>3 durées de vie")]
+    S -- "hit" --> K[("Cache Caffeine<br/>4 durées de vie")]
     S -- "miss" --> R["FootballDataRateLimiter<br/>10 req/min"]
     R -- "X-Auth-Token" --> API["football-data.org v4"]
 ```
@@ -24,10 +24,10 @@ flowchart LR
 
 | Méthode | Route | Paramètres | Cache |
 |---|---|---|---|
-| `GET` | `/api/competitions/{id}` | — | 60 s |
-| `GET` | `/api/competitions/{id}/standings` | `season` (optionnel, ex. `2025`) | 5 min, ou 24 h pour une saison terminée |
+| `GET` | `/api/competitions/{id}` | — | 24 h |
+| `GET` | `/api/competitions/{id}/standings` | `season` (optionnel, ex. `2025`) | 5 min, ou 30 jours pour une saison terminée |
 | `GET` | `/api/competitions/{id}/matches` | — | 60 s |
-| `GET` | `/api/competitions/{id}/scorers` | `limit`, `season` (optionnels) | 5 min, ou 24 h pour une saison terminée |
+| `GET` | `/api/competitions/{id}/scorers` | `limit`, `season` (optionnels) | 5 min, ou 30 jours pour une saison terminée |
 
 `{id}` accepte un code (`FL1`, `PL`…) ou un identifiant numérique (`2015`). Un `id` qui ne correspond pas à `^[a-zA-Z0-9_-]+$` ou une `season` qui n'est pas une année sur 4 chiffres renvoient `400`.
 
@@ -45,9 +45,11 @@ Les réponses reprennent la structure de football-data.org, réduite aux champs 
 
 - **Un quota global, pas par visiteur.** `FootballDataRateLimiter` applique une fenêtre glissante d'une minute à tous les appels sortants réels. Quand le quota est atteint, l'API répond `429` avec un en-tête `Retry-After` au lieu de se faire bloquer par football-data.org. Les réponses servies depuis le cache ne comptent pas dans le quota.
 - **Un cache adapté à chaque type de donnée** (`CacheConfig`) :
-  - 60 s pour les compétitions et les matchs ;
+  - 24 h pour les compétitions (nom, code, emblème), qui ne changent pratiquement jamais : l'accueil en affiche 6 ;
+  - 60 s pour les matchs ;
   - 5 min pour les classements et buteurs de la saison en cours ;
-  - 24 h pour les saisons terminées, qui ne changent plus.
+  - 30 jours pour les saisons terminées, qui ne changent plus.
+- **Un seul appel sortant par clé, même pour des requêtes simultanées.** Le cache est rempli par `Cache.get(clé, chargeur)`, atomique avec Caffeine : quand plusieurs requêtes demandent en même temps une donnée absente du cache (l'accueil et ses 6 compétitions, deux visiteurs au même moment), une seule appelle football-data.org et consomme du quota, les autres attendent sa réponse.
 - **Seules les réponses réussies sont mises en cache.** Une erreur passagère (`429`, panne réseau) ne reste pas figée jusqu'à la fin de la durée de vie du cache.
 - **Un seul appel pour tous les `limit` de buteurs.** Le service demande toujours 50 buteurs à l'API puis découpe la liste selon le `limit` demandé. Changer de `limit` côté frontend ne consomme donc jamais de quota.
 - **Des réponses typées.** Le service désérialise la réponse de l'API dans des records, met ces objets en cache et découpe la liste des buteurs sans repasser par le JSON. Une réponse réussie mais vide ou illisible est traitée comme une panne (`502`) et n'est pas mise en cache.
@@ -111,9 +113,10 @@ Toutes les valeurs sont dans `src/main/resources/application.properties` et peuv
 | `football-data.api.token` | variable `FOOTBALL_DATA_API_TOKEN` | Clé d'API football-data.org |
 | `football-data.api.base-url` | `https://api.football-data.org/v4` | URL de l'API |
 | `football-data.api.rate-limit-per-minute` | `10` | Quota d'appels sortants par minute |
-| `football-data.cache.static-ttl-seconds` | `60` | Cache des compétitions et matchs |
+| `football-data.cache.competition-ttl-hours` | `24` | Cache des compétitions |
+| `football-data.cache.static-ttl-seconds` | `60` | Cache des matchs |
 | `football-data.cache.current-season-ttl-seconds` | `300` | Cache de la saison en cours |
-| `football-data.cache.historical-season-ttl-hours` | `24` | Cache des saisons terminées |
+| `football-data.cache.historical-season-ttl-hours` | `720` (30 jours) | Cache des saisons terminées |
 | `app.cors.allowed-origins` | vide (variable `APP_CORS_ALLOWED_ORIGINS`) | Origines autorisées à appeler `/api/**` en `GET` depuis un navigateur, séparées par des virgules (ex. `https://dashboard-foot.example`). Vide : aucune origine externe |
 | `sentry.dsn` | vide (variable `SENTRY_DSN`) | Projet Sentry qui reçoit les erreurs. Vide : Sentry désactivé |
 | `sentry.environment` | `local` (variable `SENTRY_ENVIRONMENT`) | Environnement affiché dans Sentry (`production` sur Render) |
@@ -200,6 +203,7 @@ Les tests ne demandent ni clé d'API ni accès réseau (l'API est simulée) :
 - **Contrôleur** : rejet des identifiants invalides (caractères spéciaux, `/`, injection SQL, remontée de répertoire) et transmission des paramètres.
 - **Service** :
   - utilisation du cache, et une clé de cache par saison ;
+  - durée de vie de chaque cache, avec un temps simulé (`Ticker` de Caffeine), et un seul appel sortant pour deux requêtes simultanées (`FootballDataProxyServiceCacheTest`) ;
   - choix du bon cache selon la saison ;
   - erreurs non mises en cache ;
   - transmission des statuts d'erreur ;
@@ -218,7 +222,7 @@ La CI GitHub Actions compile le projet et lance les tests à chaque push et chaq
 src/main/java/fr/foucouthibault/dashboardfoot/
 ├── config/
 │   ├── AppConfig.java                  # RestTemplate
-│   ├── CacheConfig.java                # Les trois caches Caffeine
+│   ├── CacheConfig.java                # Les quatre caches Caffeine
 │   ├── CorsConfig.java                 # Origines autorisées (CORS)
 │   ├── OpenApiConfig.java              # Description OpenAPI (springdoc)
 │   ├── RequestIdFilter.java            # requestId dans le MDC et l'en-tête X-Request-Id
