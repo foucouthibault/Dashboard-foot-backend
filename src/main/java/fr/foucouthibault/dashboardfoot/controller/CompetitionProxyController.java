@@ -44,7 +44,7 @@ public class CompetitionProxyController {
 
     private static final String ID_DESCRIPTION = "Code (FL1, PL…) ou identifiant numérique de la compétition";
     private static final String SEASON_DESCRIPTION = "Année de début de la saison ; saison en cours si absent";
-    private static final String SEASON_CACHE = "Cache : 5 min pour la saison en cours, 24 h pour une saison terminée.";
+    private static final String SEASON_CACHE = "Cache : 5 min pour la saison en cours, 30 jours pour une saison terminée.";
 
     private final FootballDataProxyService footballDataProxyService;
 
@@ -66,7 +66,7 @@ public class CompetitionProxyController {
 
     @GetMapping("/{id}")
     @ApiResponse(responseCode = "200", description = "OK")
-    @Operation(summary = "Compétition", description = "Nom, code et logo de la compétition. Cache : 60 s.")
+    @Operation(summary = "Compétition", description = "Nom, code et logo de la compétition. Cache : 24 h.")
     public CompetitionResponse proxyCompetition(
             @Parameter(description = ID_DESCRIPTION, example = "FL1", schema = @Schema(pattern = VALID_ID_PATTERN))
             @PathVariable String id,

@@ -41,8 +41,8 @@ Chaque commit sur `main` redéploie l'API publique une fois la CI passée.
   `MatchesResponse`, `ScorersResponse`), limités aux champs lus par le frontend. Listes
   immuables : les instances sont partagées par le cache.
 - `service/FootballDataRateLimiter` : quota global à fenêtre glissante, `Clock` injectable.
-- `config/CacheConfig` : trois caches Caffeine (statique 60 s, saison en cours 5 min,
-  saison terminée 24 h).
+- `config/CacheConfig` : quatre caches Caffeine (compétitions 24 h, matchs 60 s, saison en
+  cours 5 min, saison terminée 30 jours), avec un `Ticker` injectable pour les tests.
 - `config/CorsConfig` : CORS sur `/api/**`, `GET` uniquement, pour les origines de
   `app.cors.allowed-origins` (vide par défaut : aucune origine externe). Expose `Retry-After`,
   que le frontend lit sur un `429`, et `X-Request-Id` ; n'accepte que les en-têtes `Accept`, `Accept-Language`,
@@ -63,7 +63,8 @@ Chaque commit sur `main` redéploie l'API publique une fois la CI passée.
 
 - **Quota football-data.org : 10 appels/minute pour tout le monde.** Tout appel sortant
   passe par `rateLimiter.tryAcquire()` ; un hit de cache ne doit jamais le consommer.
-  Toute nouvelle route doit passer par `cached(...)`.
+  Toute nouvelle route doit passer par `cached(...)`, qui charge via `Cache.get(clé, chargeur)` :
+  un seul appel sortant par clé, même pour des requêtes simultanées.
 - **Seules les réponses 2xx sont mises en cache.**
 - **Les buteurs sont toujours demandés avec `limit=50`** puis découpés localement :
   le `limit` du client ne fait pas partie de la clé de cache.

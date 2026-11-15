@@ -77,6 +77,7 @@ class FootballDataProxyServiceTest {
     private static CacheManager buildCacheManager() {
         CaffeineCacheManager manager = new CaffeineCacheManager();
         Caffeine<Object, Object> generousTtl = Caffeine.newBuilder().expireAfterWrite(Duration.ofMinutes(10));
+        manager.registerCustomCache(CacheConfig.COMPETITIONS_CACHE, generousTtl.build());
         manager.registerCustomCache(CacheConfig.STATIC_CACHE, generousTtl.build());
         manager.registerCustomCache(CacheConfig.CURRENT_SEASON_CACHE, generousTtl.build());
         manager.registerCustomCache(CacheConfig.HISTORICAL_SEASON_CACHE, generousTtl.build());
@@ -108,7 +109,7 @@ class FootballDataProxyServiceTest {
 
         CompetitionResponse response = service.getCompetition("FL1", headers);
 
-        Object cached = cacheManager.getCache(CacheConfig.STATIC_CACHE).get("competition_FL1").get();
+        Object cached = cacheManager.getCache(CacheConfig.COMPETITIONS_CACHE).get("competition_FL1").get();
         assertSame(response, cached);
         assertEquals(new CompetitionResponse(2015L, "Ligue 1", null, null), cached);
     }

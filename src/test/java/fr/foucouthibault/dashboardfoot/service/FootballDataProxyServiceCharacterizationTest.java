@@ -77,6 +77,7 @@ class FootballDataProxyServiceCharacterizationTest {
     void setUp() {
         CaffeineCacheManager manager = new CaffeineCacheManager();
         Caffeine<Object, Object> generousTtl = Caffeine.newBuilder().expireAfterWrite(Duration.ofMinutes(10));
+        manager.registerCustomCache(CacheConfig.COMPETITIONS_CACHE, generousTtl.build());
         manager.registerCustomCache(CacheConfig.STATIC_CACHE, generousTtl.build());
         manager.registerCustomCache(CacheConfig.CURRENT_SEASON_CACHE, generousTtl.build());
         manager.registerCustomCache(CacheConfig.HISTORICAL_SEASON_CACHE, generousTtl.build());
@@ -171,7 +172,7 @@ class FootballDataProxyServiceCharacterizationTest {
         assertThrows(UpstreamUrlRejectedException.class,
             () -> misconfigured.getCompetition("FL1", new HttpHeaders()));
 
-        assertNull(cacheManager.getCache(CacheConfig.STATIC_CACHE).get("competition_FL1"));
+        assertNull(cacheManager.getCache(CacheConfig.COMPETITIONS_CACHE).get("competition_FL1"));
     }
 
     @Test
@@ -380,7 +381,7 @@ class FootballDataProxyServiceCharacterizationTest {
         assertThrows(UpstreamUnavailableException.class,
             () -> service.getCompetition("FL1", new HttpHeaders()));
 
-        assertNull(cacheManager.getCache(CacheConfig.STATIC_CACHE).get("competition_FL1"));
+        assertNull(cacheManager.getCache(CacheConfig.COMPETITIONS_CACHE).get("competition_FL1"));
     }
 
     @Test
@@ -390,7 +391,7 @@ class FootballDataProxyServiceCharacterizationTest {
         assertThrows(UpstreamUnavailableException.class,
             () -> service.getCompetition("FL1", new HttpHeaders()));
 
-        assertNull(cacheManager.getCache(CacheConfig.STATIC_CACHE).get("competition_FL1"));
+        assertNull(cacheManager.getCache(CacheConfig.COMPETITIONS_CACHE).get("competition_FL1"));
     }
 
     // ==================== Erreurs amont ====================
