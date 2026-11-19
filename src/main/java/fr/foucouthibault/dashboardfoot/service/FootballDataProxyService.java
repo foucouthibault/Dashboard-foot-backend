@@ -9,11 +9,13 @@ import fr.foucouthibault.dashboardfoot.model.CompetitionResponse;
 import fr.foucouthibault.dashboardfoot.model.MatchesResponse;
 import fr.foucouthibault.dashboardfoot.model.ScorersResponse;
 import fr.foucouthibault.dashboardfoot.model.StandingsResponse;
+import io.sentry.Sentry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
+import org.springframework.cache.caffeine.CaffeineCache;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpStatusCodeException;
@@ -25,6 +27,7 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.net.URI;
+import java.time.Duration;
 import java.time.Year;
 import java.util.Collections;
 import java.util.Optional;
@@ -36,6 +39,13 @@ import java.util.regex.Pattern;
  * Le cache est piloté manuellement via CacheManager pour choisir la bonne durée de vie
  * selon que la saison demandée est terminée ou en cours ; il stocke les réponses typées.
  * Les erreurs sont signalées par des exceptions, traduites en HTTP par ApiExceptionHandler.
+ *
+ * Chaque réponse réussie est aussi copiée dans un cache de secours à longue durée de vie
+ * ({@link CacheConfig#fallbackCacheName(String)}). Quand le chargement échoue pour une raison
+ * passagère (quota atteint, {@code 429} ou {@code 5xx} de football-data.org, panne réseau,
+ * réponse illisible), cette copie est servie à la place de l'erreur et son âge est signalé par
+ * l'en-tête {@code Age} ({@link StaleResponse}). Un {@code 400}/{@code 403}/{@code 404} amont
+ * est une vraie réponse, pas une panne : il reste relayé.
  *
  * Les lignes de log notables portent un champ {@code event} au nom stable (constantes
  * {@code EVENT_*}), visible dans les logs JSON de production : on peut compter ou filtrer un
@@ -58,6 +68,12 @@ public class FootballDataProxyService {
     static final String EVENT_AMONT_INDISPONIBLE = "amont_indisponible";
     static final String EVENT_URL_REFUSEE = "url_refusee";
     static final String EVENT_CACHE_MANQUE = "cache_manque";
+    static final String EVENT_DONNEE_PERIMEE_SERVIE = "donnee_perimee_servie";
+
+    /** Raisons de servir une copie de secours (champ {@code reason} de l'événement). */
+    static final String REASON_QUOTA_INTERNE = "quota_interne";
+    static final String REASON_AMONT_ERREUR = "amont_erreur";
+    static final String REASON_AMONT_INDISPONIBLE = "amont_indisponible";
 
     private static final Pattern CONTROL_CHARACTERS = Pattern.compile("\\p{Cntrl}");
 
@@ -148,26 +164,92 @@ public class FootballDataProxyService {
      * simultanées sur une clé absente attendent le chargement en cours au lieu de lancer chacune
      * leur appel sortant (accueil qui demande ses 6 compétitions, deux visiteurs en même temps).
      * Un hit ne passe ni par le limiteur ni par l'API.
+     *
+     * Si le chargement échoue, la copie de secours est servie quand l'échec est passager
+     * ({@link #fallbackReason(RuntimeException)}) ; elle n'est pas remise dans le cache
+     * principal, pour qu'un nouvel appel soit tenté dès qu'un créneau se libère.
      */
     private <T> T cached(String cacheName, String key, String url, HttpHeaders incomingHeaders, Class<T> type) {
         Cache cache = cacheManager.getCache(cacheName);
         if (cache == null) {
             return load(cacheName, key, url, incomingHeaders, type);
         }
+        Cache fallback = cacheManager.getCache(CacheConfig.fallbackCacheName(cacheName));
         try {
             // fetch ne renvoie qu'une réponse réussie et lisible : toute erreur lève une exception
             // pendant le chargement, et Caffeine ne garde alors rien en cache (une erreur
             // transitoire ne reste pas figée).
-            return cache.get(key, () -> load(cacheName, key, url, incomingHeaders, type));
+            return cache.get(key, () -> {
+                T value = load(cacheName, key, url, incomingHeaders, type);
+                if (fallback != null) {
+                    fallback.put(key, value);
+                }
+                return value;
+            });
         } catch (Cache.ValueRetrievalException e) {
             // Spring enveloppe l'exception du chargement : on relance l'originale pour
             // qu'ApiExceptionHandler garde son statut (429, statut amont, 502…).
-            switch (e.getCause()) {
-                case RuntimeException cause -> throw cause;
+            RuntimeException failure = switch (e.getCause()) {
+                case RuntimeException cause -> cause;
                 case Error error -> throw error;
-                case null, default -> throw new UpstreamUnavailableException(e.getCause());
-            }
+                case null, default -> new UpstreamUnavailableException(e.getCause());
+            };
+            return fallbackCopy(cacheName, fallback, key, type, failure).orElseThrow(() -> failure);
         }
+    }
+
+    /**
+     * Copie de secours de {@code key}, si l'échec le permet et qu'elle existe encore. La servir
+     * ne consomme pas de quota. Une panne de football-data.org reste signalée à Sentry ; un
+     * refus du limiteur interne non (comportement attendu, filtré par SentryEventFilter).
+     */
+    private <T> Optional<T> fallbackCopy(String cacheName, Cache fallback, String key, Class<T> type,
+                                         RuntimeException failure) {
+        String reason = fallbackReason(failure);
+        if (reason == null || fallback == null) {
+            return Optional.empty();
+        }
+        Object copy = Optional.ofNullable(fallback.get(key)).map(Cache.ValueWrapper::get).orElse(null);
+        if (!type.isInstance(copy)) {
+            return Optional.empty();
+        }
+        Duration age = ageOf(fallback, key);
+        log.atWarn()
+            .addKeyValue(EVENT, EVENT_DONNEE_PERIMEE_SERVIE)
+            .addKeyValue("cache", cacheName)
+            .addKeyValue("cacheKey", forLog(key))
+            .addKeyValue("reason", reason)
+            .addKeyValue("ageSeconds", age.toSeconds())
+            .log("Copie de secours servie pour {} ({}, âge {}s)", forLog(key), reason, age.toSeconds());
+        if (!(failure instanceof RateLimitExceededException)) {
+            Sentry.captureException(failure);
+        }
+        StaleResponse.markCurrentRequest(age);
+        return Optional.of(type.cast(copy));
+    }
+
+    /**
+     * Raison de servir la copie de secours, ou {@code null} si l'échec doit atteindre le client :
+     * un {@code 400}/{@code 403}/{@code 404} de football-data.org, une URL refusée.
+     */
+    static String fallbackReason(RuntimeException failure) {
+        return switch (failure) {
+            case RateLimitExceededException ignored -> REASON_QUOTA_INTERNE;
+            case UpstreamUnavailableException ignored -> REASON_AMONT_INDISPONIBLE;
+            case UpstreamErrorException e when e.getStatus().isSameCodeAs(HttpStatus.TOO_MANY_REQUESTS)
+                || e.getStatus().is5xxServerError() -> REASON_AMONT_ERREUR;
+            default -> null;
+        };
+    }
+
+    /** Temps écoulé depuis l'écriture de la copie, mesuré par le ticker du cache. */
+    private static Duration ageOf(Cache fallback, String key) {
+        if (fallback instanceof CaffeineCache caffeine) {
+            return caffeine.getNativeCache().policy().expireAfterWrite()
+                .flatMap(expiration -> expiration.ageOf(key))
+                .orElse(Duration.ZERO);
+        }
+        return Duration.ZERO;
     }
 
     private <T> T load(String cacheName, String key, String url, HttpHeaders incomingHeaders, Class<T> type) {

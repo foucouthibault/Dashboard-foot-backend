@@ -4,6 +4,7 @@ import fr.foucouthibault.dashboardfoot.controller.CompetitionProxyController;
 import fr.foucouthibault.dashboardfoot.exception.RateLimitExceededException;
 import fr.foucouthibault.dashboardfoot.model.CompetitionResponse;
 import fr.foucouthibault.dashboardfoot.service.FootballDataProxyService;
+import fr.foucouthibault.dashboardfoot.service.StaleResponseTestSupport;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -13,6 +14,8 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+
+import java.time.Duration;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasItem;
@@ -76,7 +79,22 @@ class CorsConfigTest {
             .andExpect(header().string(HttpHeaders.RETRY_AFTER, "42"))
             .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, ALLOWED))
             .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS,
-                HttpHeaders.RETRY_AFTER + ", " + RequestIdFilter.HEADER));
+                HttpHeaders.RETRY_AFTER + ", " + RequestIdFilter.HEADER + ", " + HttpHeaders.AGE));
+    }
+
+    /** Le frontend lit Age pour signaler une donnée servie depuis la copie de secours du backend. */
+    @Test
+    void staleResponseExposesItsAgeToAnAllowedOrigin() throws Exception {
+        when(service.getCompetition(anyString(), any())).thenAnswer(invocation -> {
+            StaleResponseTestSupport.markCurrentRequest(Duration.ofSeconds(90));
+            return new CompetitionResponse(2015L, "Ligue 1", "FL1", null);
+        });
+
+        mockMvc.perform(get(ROUTE).header(HttpHeaders.ORIGIN, ALLOWED))
+            .andExpect(status().isOk())
+            .andExpect(header().string(HttpHeaders.AGE, "90"))
+            .andExpect(header().stringValues(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS,
+                hasItem(containsString(HttpHeaders.AGE))));
     }
 
     /** Le frontend lit X-Request-Id pour citer la requête (logs du backend) dans ses erreurs. */

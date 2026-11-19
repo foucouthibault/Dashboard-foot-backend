@@ -41,7 +41,16 @@
                 }
               }
             },
-            "description" : "OK"
+            "description" : "OK",
+            "headers" : {
+              "Age" : {
+                "description" : "Présent seulement quand football-data.org est indisponible ou le quota atteint : la réponse vient alors de la copie de secours, et l'en-tête donne son âge en secondes",
+                "schema" : {
+                  "type" : "integer"
+                },
+                "style" : "simple"
+              }
+            }
           },
           "400" : {
             "content" : {
@@ -141,7 +150,16 @@
                 }
               }
             },
-            "description" : "OK"
+            "description" : "OK",
+            "headers" : {
+              "Age" : {
+                "description" : "Présent seulement quand football-data.org est indisponible ou le quota atteint : la réponse vient alors de la copie de secours, et l'en-tête donne son âge en secondes",
+                "schema" : {
+                  "type" : "integer"
+                },
+                "style" : "simple"
+              }
+            }
           },
           "400" : {
             "content" : {
@@ -261,7 +279,16 @@
                 }
               }
             },
-            "description" : "OK"
+            "description" : "OK",
+            "headers" : {
+              "Age" : {
+                "description" : "Présent seulement quand football-data.org est indisponible ou le quota atteint : la réponse vient alors de la copie de secours, et l'en-tête donne son âge en secondes",
+                "schema" : {
+                  "type" : "integer"
+                },
+                "style" : "simple"
+              }
+            }
           },
           "400" : {
             "content" : {
@@ -371,7 +398,16 @@
                 }
               }
             },
-            "description" : "OK"
+            "description" : "OK",
+            "headers" : {
+              "Age" : {
+                "description" : "Présent seulement quand football-data.org est indisponible ou le quota atteint : la réponse vient alors de la copie de secours, et l'en-tête donne son âge en secondes",
+                "schema" : {
+                  "type" : "integer"
+                },
+                "style" : "simple"
+              }
+            }
           },
           "400" : {
             "content" : {

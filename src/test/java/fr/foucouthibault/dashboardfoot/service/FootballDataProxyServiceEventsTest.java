@@ -48,6 +48,7 @@ class FootballDataProxyServiceEventsTest {
     private final FootballDataRateLimiter rateLimiter = mock(FootballDataRateLimiter.class);
     private final Logger logger = (Logger) LoggerFactory.getLogger(FootballDataProxyService.class);
     private final ListAppender<ILoggingEvent> appender = new ListAppender<>();
+    private CaffeineCacheManager cacheManager;
     private FootballDataProxyService service;
 
     @BeforeEach
@@ -55,8 +56,9 @@ class FootballDataProxyServiceEventsTest {
         appender.start();
         logger.addAppender(appender);
 
-        CaffeineCacheManager cacheManager = new CaffeineCacheManager(
-            CacheConfig.COMPETITIONS_CACHE, CacheConfig.STATIC_CACHE, CacheConfig.CURRENT_SEASON_CACHE, CacheConfig.HISTORICAL_SEASON_CACHE);
+        cacheManager = new CaffeineCacheManager(
+            CacheConfig.COMPETITIONS_CACHE, CacheConfig.STATIC_CACHE, CacheConfig.CURRENT_SEASON_CACHE, CacheConfig.HISTORICAL_SEASON_CACHE,
+            CacheConfig.fallbackCacheName(CacheConfig.COMPETITIONS_CACHE));
         service = new FootballDataProxyService(restTemplate, cacheManager, rateLimiter);
         setField("apiBaseUrl", "https://api.football-data.org/v4");
         setField("apiToken", "cle-secrete-de-test");
@@ -146,6 +148,36 @@ class FootballDataProxyServiceEventsTest {
         assertThat(event("cache_manque"))
             .containsEntry("cache", CacheConfig.COMPETITIONS_CACHE)
             .containsEntry("cacheKey", "competition_FL1");
+    }
+
+    @Test
+    void servingTheFallbackCopyProducesDonneePerimeeServieWithItsReasonAndAge() {
+        when(restTemplate.exchange(eq(URI.create(URL)), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class)))
+            .thenReturn(ResponseEntity.ok("{\"id\":2015}"))
+            .thenThrow(new ResourceAccessException("Connection refused"));
+        service.getCompetition("FL1", new HttpHeaders());
+        // Entrée principale expirée, copie de secours encore là.
+        cacheManager.getCache(CacheConfig.COMPETITIONS_CACHE).evict("competition_FL1");
+
+        service.getCompetition("FL1", new HttpHeaders());
+
+        assertThat(event("donnee_perimee_servie"))
+            .containsEntry("cache", CacheConfig.COMPETITIONS_CACHE)
+            .containsEntry("cacheKey", "competition_FL1")
+            .containsEntry("reason", "amont_indisponible")
+            .containsEntry("ageSeconds", 0L);
+    }
+
+    @Test
+    void theFallbackReasonDistinguishesTheQuotaFromUpstreamFailures() {
+        assertThat(FootballDataProxyService.fallbackReason(new RateLimitExceededException(5))).isEqualTo("quota_interne");
+        assertThat(FootballDataProxyService.fallbackReason(new UpstreamErrorException(HttpStatus.TOO_MANY_REQUESTS)))
+            .isEqualTo("amont_erreur");
+        assertThat(FootballDataProxyService.fallbackReason(new UpstreamErrorException(HttpStatus.SERVICE_UNAVAILABLE)))
+            .isEqualTo("amont_erreur");
+        assertThat(FootballDataProxyService.fallbackReason(new UpstreamUnavailableException(null)))
+            .isEqualTo("amont_indisponible");
+        assertThat(FootballDataProxyService.fallbackReason(new UpstreamErrorException(HttpStatus.NOT_FOUND))).isNull();
     }
 
     /** Le jeton est envoyé à football-data.org, jamais écrit dans les logs. */

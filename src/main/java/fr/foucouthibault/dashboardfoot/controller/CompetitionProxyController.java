@@ -44,6 +44,8 @@ public class CompetitionProxyController {
 
     private static final String ID_DESCRIPTION = "Code (FL1, PL…) ou identifiant numérique de la compétition";
     private static final String SEASON_DESCRIPTION = "Année de début de la saison ; saison en cours si absent";
+    private static final String AGE_DESCRIPTION = "Présent seulement quand football-data.org est indisponible ou le quota "
+        + "atteint : la réponse vient alors de la copie de secours, et l'en-tête donne son âge en secondes";
     private static final String SEASON_CACHE = "Cache : 5 min pour la saison en cours, 30 jours pour une saison terminée.";
 
     private final FootballDataProxyService footballDataProxyService;
@@ -65,7 +67,8 @@ public class CompetitionProxyController {
     }
 
     @GetMapping("/{id}")
-    @ApiResponse(responseCode = "200", description = "OK")
+    @ApiResponse(responseCode = "200", description = "OK",
+        headers = @Header(name = "Age", description = AGE_DESCRIPTION, schema = @Schema(type = "integer")))
     @Operation(summary = "Compétition", description = "Nom, code et logo de la compétition. Cache : 24 h.")
     public CompetitionResponse proxyCompetition(
             @Parameter(description = ID_DESCRIPTION, example = "FL1", schema = @Schema(pattern = VALID_ID_PATTERN))
@@ -76,7 +79,8 @@ public class CompetitionProxyController {
     }
 
     @GetMapping("/{id}/standings")
-    @ApiResponse(responseCode = "200", description = "OK")
+    @ApiResponse(responseCode = "200", description = "OK",
+        headers = @Header(name = "Age", description = AGE_DESCRIPTION, schema = @Schema(type = "integer")))
     @Operation(summary = "Classement",
         description = "Classements général, domicile et extérieur (par poule le cas échéant). " + SEASON_CACHE)
     public StandingsResponse proxyStandings(
@@ -91,7 +95,8 @@ public class CompetitionProxyController {
     }
 
     @GetMapping("/{id}/matches")
-    @ApiResponse(responseCode = "200", description = "OK")
+    @ApiResponse(responseCode = "200", description = "OK",
+        headers = @Header(name = "Age", description = AGE_DESCRIPTION, schema = @Schema(type = "integer")))
     @Operation(summary = "Matchs", description = "Matchs de la saison en cours. Cache : 60 s.")
     public MatchesResponse proxyMatches(
             @Parameter(description = ID_DESCRIPTION, example = "FL1", schema = @Schema(pattern = VALID_ID_PATTERN))
@@ -102,7 +107,8 @@ public class CompetitionProxyController {
     }
 
     @GetMapping("/{id}/scorers")
-    @ApiResponse(responseCode = "200", description = "OK")
+    @ApiResponse(responseCode = "200", description = "OK",
+        headers = @Header(name = "Age", description = AGE_DESCRIPTION, schema = @Schema(type = "integer")))
     @Operation(summary = "Buteurs",
         description = "Meilleurs buteurs. Les 50 premiers sont mis en cache puis découpés selon limit : "
             + "changer de limit ne consomme pas de quota. " + SEASON_CACHE)

@@ -16,6 +16,7 @@ flowchart LR
     F["Frontend Vue 3"] -- "GET /api/competitions/..." --> C["CompetitionProxyController<br/>validation des paramètres"]
     C --> S["FootballDataProxyService"]
     S -- "hit" --> K[("Cache Caffeine<br/>4 durées de vie")]
+    S -. "quota atteint, panne" .-> B[("Copie de secours<br/>en-tête Age")]
     S -- "miss" --> R["FootballDataRateLimiter<br/>10 req/min"]
     R -- "X-Auth-Token" --> API["football-data.org v4"]
 ```
@@ -28,6 +29,8 @@ flowchart LR
 | `GET` | `/api/competitions/{id}/standings` | `season` (optionnel, ex. `2025`) | 5 min, ou 30 jours pour une saison terminée |
 | `GET` | `/api/competitions/{id}/matches` | — | 60 s |
 | `GET` | `/api/competitions/{id}/scorers` | `limit`, `season` (optionnels) | 5 min, ou 30 jours pour une saison terminée |
+
+Quand le quota est atteint ou que football-data.org est en panne, une route peut répondre `200` avec la dernière réponse connue et un en-tête `Age` (voir « Copie de secours » ci-dessous).
 
 `{id}` accepte un code (`FL1`, `PL`…) ou un identifiant numérique (`2015`). Un `id` qui ne correspond pas à `^[a-zA-Z0-9_-]+$` ou une `season` qui n'est pas une année sur 4 chiffres renvoient `400`.
 
@@ -51,12 +54,13 @@ Les réponses reprennent la structure de football-data.org, réduite aux champs 
   - 30 jours pour les saisons terminées, qui ne changent plus.
 - **Un seul appel sortant par clé, même pour des requêtes simultanées.** Le cache est rempli par `Cache.get(clé, chargeur)`, atomique avec Caffeine : quand plusieurs requêtes demandent en même temps une donnée absente du cache (l'accueil et ses 6 compétitions, deux visiteurs au même moment), une seule appelle football-data.org et consomme du quota, les autres attendent sa réponse.
 - **Seules les réponses réussies sont mises en cache.** Une erreur passagère (`429`, panne réseau) ne reste pas figée jusqu'à la fin de la durée de vie du cache.
+- **Copie de secours : une donnée un peu ancienne plutôt qu'une erreur** (principe de `stale-if-error`, RFC 5861). Chaque réponse réussie est aussi gardée dans un cache de secours, bien plus longtemps : 7 jours pour les compétitions, 6 h pour les matchs, 24 h pour la saison en cours, 60 jours pour une saison terminée. Quand l'entrée principale a expiré et que le chargement échoue pour une raison passagère (quota interne atteint, `429` ou `5xx` de football-data.org, panne réseau, réponse illisible), la copie est servie en `200` avec l'en-tête `Age` (RFC 9111, en secondes depuis la réponse d'origine), exposé en CORS pour le frontend. Le corps garde la même forme. Servir la copie ne consomme pas de quota, et elle ne remplit pas le cache principal : un nouvel appel est tenté dès qu'un créneau se libère. Un `400`, `403` ou `404` de football-data.org est une vraie réponse et reste relayé. Sans copie, rien ne change (`429` + `Retry-After`, `502`). La copie est en mémoire : elle est vide après un redémarrage, donc après chaque déploiement.
 - **Un seul appel pour tous les `limit` de buteurs.** Le service demande toujours 50 buteurs à l'API puis découpe la liste selon le `limit` demandé. Changer de `limit` côté frontend ne consomme donc jamais de quota.
 - **Des réponses typées.** Le service désérialise la réponse de l'API dans des records, met ces objets en cache et découpe la liste des buteurs sans repasser par le JSON. Une réponse réussie mais vide ou illisible est traitée comme une panne (`502`) et n'est pas mise en cache.
 - **Des erreurs au format standard.** Le service signale les erreurs par des exceptions, traduites en `ProblemDetail` par `ApiExceptionHandler`, qui étend `ResponseEntityExceptionHandler` pour que les erreurs de Spring MVC (paramètre mal typé…) aient le même format. Un statut d'erreur de l'API (saison hors offre, quota dépassé…) est renvoyé tel quel ; son corps est journalisé mais pas transmis. Une panne réseau donne un `502` sans exposer le message de l'exception.
 - **Un contrat versionné.** springdoc produit la spécification OpenAPI à partir du contrôleur et des records. `OpenApiContractTest` la réécrit dans `openapi.json` à chaque build et échoue si le fichier versionné était différent : un changement de contrat ne passe pas la CI sans que `openapi.json` soit committé. Le frontend vérifie en CI que ses types sont compatibles avec ce fichier. Tous les champs des réponses y sont obligatoires (Jackson sérialise aussi les `null`) ; ceux qui peuvent valoir `null` portent `@Schema(nullable = true)`.
-- **CORS fermé par défaut.** En développement, le frontend passe par le proxy Vite (même origine). En ligne, son domaine doit figurer dans `app.cors.allowed-origins`, et seules les requêtes `GET` sur `/api/**` sont autorisées, avec les en-têtes `Accept`, `Accept-Language` et ceux du suivi Sentry du frontend (`sentry-trace`, `baggage`). L'en-tête `Retry-After` d'un `429` est exposé (`Access-Control-Expose-Headers`) pour que le frontend puisse afficher le délai d'attente. Une origine absente de la liste reçoit un `403` sans atteindre le contrôleur, donc sans consommer de quota.
-- **Erreurs remontées dans Sentry, triées.** Le SDK n'est actif que si `SENTRY_DSN` est renseignée (production) ; en local, en CI et dans les tests, rien n'est envoyé. Partent vers Sentry : les exceptions non gérées, les pannes de football-data.org (`502`) et un `429` renvoyé par football-data.org (le limiteur interne a laissé passer trop d'appels : bug, et risque de blocage de la clé). Ne partent pas : le `429` du limiteur interne (comportement voulu), les requêtes invalides (`400`), les `403` et `404` relayés (saison hors offre, compétition inconnue). Chaque événement porte l'environnement et la version (commit déployé). `SentryEventFilter` retire en-têtes, cookies et adresse du client, en plus de `sentry.send-default-pii=false`.
+- **CORS fermé par défaut.** En développement, le frontend passe par le proxy Vite (même origine). En ligne, son domaine doit figurer dans `app.cors.allowed-origins`, et seules les requêtes `GET` sur `/api/**` sont autorisées, avec les en-têtes `Accept`, `Accept-Language` et ceux du suivi Sentry du frontend (`sentry-trace`, `baggage`). L'en-tête `Retry-After` d'un `429` est exposé (`Access-Control-Expose-Headers`) pour que le frontend puisse afficher le délai d'attente, ainsi que `Age`, qui signale une réponse servie depuis la copie de secours. Une origine absente de la liste reçoit un `403` sans atteindre le contrôleur, donc sans consommer de quota.
+- **Erreurs remontées dans Sentry, triées.** Le SDK n'est actif que si `SENTRY_DSN` est renseignée (production) ; en local, en CI et dans les tests, rien n'est envoyé. Partent vers Sentry : les exceptions non gérées, les pannes de football-data.org (`502`) et un `429` renvoyé par football-data.org (le limiteur interne a laissé passer trop d'appels : bug, et risque de blocage de la clé). Une panne masquée par la copie de secours part quand même : le visiteur reçoit une donnée, mais l'incident reste visible. Ne partent pas : le `429` du limiteur interne (comportement voulu, même quand la copie est servie à sa place), les requêtes invalides (`400`), les `403` et `404` relayés (saison hors offre, compétition inconnue). Chaque événement porte l'environnement et la version (commit déployé). `SentryEventFilter` retire en-têtes, cookies et adresse du client, en plus de `sentry.send-default-pii=false`.
 - **Sécurité :**
   - le jeton reste côté serveur ;
   - seuls les en-têtes `Accept` et `Accept-Language` du client sont relayés, et aucun en-tête de la réponse de l'API n'est renvoyé au client ;
@@ -117,6 +121,10 @@ Toutes les valeurs sont dans `src/main/resources/application.properties` et peuv
 | `football-data.cache.static-ttl-seconds` | `60` | Cache des matchs |
 | `football-data.cache.current-season-ttl-seconds` | `300` | Cache de la saison en cours |
 | `football-data.cache.historical-season-ttl-hours` | `720` (30 jours) | Cache des saisons terminées |
+| `football-data.cache.fallback.competition-ttl-hours` | `168` (7 jours) | Copie de secours des compétitions |
+| `football-data.cache.fallback.static-ttl-hours` | `6` | Copie de secours des matchs |
+| `football-data.cache.fallback.current-season-ttl-hours` | `24` | Copie de secours de la saison en cours |
+| `football-data.cache.fallback.historical-season-ttl-hours` | `1440` (60 jours) | Copie de secours des saisons terminées |
 | `app.cors.allowed-origins` | vide (variable `APP_CORS_ALLOWED_ORIGINS`) | Origines autorisées à appeler `/api/**` en `GET` depuis un navigateur, séparées par des virgules (ex. `https://dashboard-foot.example`). Vide : aucune origine externe |
 | `sentry.dsn` | vide (variable `SENTRY_DSN`) | Projet Sentry qui reçoit les erreurs. Vide : Sentry désactivé |
 | `sentry.environment` | `local` (variable `SENTRY_ENVIRONMENT`) | Environnement affiché dans Sentry (`production` sur Render) |
@@ -163,6 +171,7 @@ En local et dans les tests, les logs restent au format texte de Spring Boot. Sur
 | `quota_atteint` | `WARN` | `retryAfter` (secondes) | Le limiteur interne refuse l'appel, le client reçoit un `429` |
 | `amont_erreur` | `WARN` | `upstreamStatus` | football-data.org a répondu par une erreur (`403`, `404`, `429`…), relayée au client |
 | `amont_indisponible` | `WARN` | `stack_trace` | Panne réseau, réponse vide ou illisible, le client reçoit un `502` |
+| `donnee_perimee_servie` | `WARN` | `cache`, `cacheKey`, `reason` (`quota_interne`, `amont_erreur`, `amont_indisponible`), `ageSeconds` | La copie de secours est servie à la place d'une erreur ; suit la ligne de l'erreur (`quota_atteint`, `amont_erreur` ou `amont_indisponible`) |
 | `url_refusee` | `WARN` | | URL sortante rejetée par le contrôle SSRF |
 
 **Rien de sensible** : ni clé d'API, ni adresse IP, ni en-têtes de requête. Les URL et corps de réponse amont sont débarrassés de leurs caractères de contrôle avant d'être écrits.
@@ -171,6 +180,7 @@ En local et dans les tests, les logs restent au format texte de Spring Boot. Sur
 
 - toutes les saturations du quota : `"event":"quota_atteint"` ;
 - les erreurs de football-data.org : `"event":"amont_erreur"`, ou un statut précis : `"upstreamStatus":429` ;
+- les données anciennes servies faute de mieux : `"event":"donnee_perimee_servie"` (une hausse durable signale une panne ou un quota saturé) ;
 - toutes les lignes d'une requête signalée par le frontend : `"requestId":"<valeur de X-Request-Id>"`.
 
 Si ces recherches ne renvoient rien alors que le service a du trafic, vérifier que les lignes sont bien en JSON : `LOG_FORMAT` doit valoir `logstash` dans *Environment* du service. Une valeur de `render.yaml` n'est appliquée qu'à la synchronisation du Blueprint.
@@ -206,11 +216,12 @@ Les tests ne demandent ni clé d'API ni accès réseau (l'API est simulée) :
   - durée de vie de chaque cache, avec un temps simulé (`Ticker` de Caffeine), et un seul appel sortant pour deux requêtes simultanées (`FootballDataProxyServiceCacheTest`) ;
   - choix du bon cache selon la saison ;
   - erreurs non mises en cache ;
+  - copie de secours servie sur quota atteint, `429`/`5xx` amont, panne réseau ou réponse illisible, sans appel sortant ni remplissage du cache principal ; `400`/`403`/`404` toujours relayés ; copie expirée non servie (`FootballDataProxyServiceFallbackTest`) ;
   - transmission des statuts d'erreur ;
   - `429` quand le quota est atteint ;
   - découpage des buteurs.
 - **Santé** (`ActuatorHealthTest`) : `/actuator/health` répond `{"status":"UP"}` sans détails ni appel à football-data.org, aucun autre endpoint Actuator n'est exposé.
-- **CORS** (`CorsConfigTest`) : en-tête `Access-Control-Allow-Origin` pour une origine autorisée seulement, `GET` uniquement (requête simple et preflight), `Retry-After` et `X-Request-Id` exposés, en-têtes `sentry-trace` et `baggage` acceptés et tout autre en-tête refusé, rien sans configuration.
+- **CORS** (`CorsConfigTest`) : en-tête `Access-Control-Allow-Origin` pour une origine autorisée seulement, `GET` uniquement (requête simple et preflight), `Retry-After`, `X-Request-Id` et `Age` exposés, en-têtes `sentry-trace` et `baggage` acceptés et tout autre en-tête refusé, rien sans configuration.
 - **Sentry** (`SentryReportingTest`, `SentryDisabledTest`, `SentryEventFilterTest`) : le transport est remplacé par un enregistreur, aucun événement ne quitte la machine. Sans DSN, rien n'est envoyé ; avec un DSN, les erreurs attendues sont écartées, les autres partent avec environnement et version, sans en-têtes, cookies, adresse IP ni clé.
 - **Limiteur de débit** : quota dans la fenêtre, libération des places, calcul de `Retry-After`. Le temps est simulé avec une `Clock` injectée.
 
@@ -222,7 +233,7 @@ La CI GitHub Actions compile le projet et lance les tests à chaque push et chaq
 src/main/java/fr/foucouthibault/dashboardfoot/
 ├── config/
 │   ├── AppConfig.java                  # RestTemplate
-│   ├── CacheConfig.java                # Les quatre caches Caffeine
+│   ├── CacheConfig.java                # Les quatre caches Caffeine et leurs copies de secours
 │   ├── CorsConfig.java                 # Origines autorisées (CORS)
 │   ├── OpenApiConfig.java              # Description OpenAPI (springdoc)
 │   ├── RequestIdFilter.java            # requestId dans le MDC et l'en-tête X-Request-Id
@@ -230,12 +241,14 @@ src/main/java/fr/foucouthibault/dashboardfoot/
 │   └── SentryEventFilter.java          # Tri des erreurs et retrait des données personnelles
 ├── controller/
 │   ├── ApiExceptionHandler.java        # Exceptions traduites en réponses HTTP
-│   └── CompetitionProxyController.java # Routes /api/competitions et validation
+│   ├── CompetitionProxyController.java # Routes /api/competitions et validation
+│   └── StaleResponseAgeAdvice.java     # En-tête Age d'une réponse servie depuis la copie de secours
 ├── exception/                          # Erreurs du service et du contrôleur
 ├── model/                              # Records des réponses (champs lus par le frontend)
 └── service/
-    ├── FootballDataProxyService.java   # Appel à l'API, cache, erreurs, sécurité SSRF
-    └── FootballDataRateLimiter.java    # Limite de débit à fenêtre glissante
+    ├── FootballDataProxyService.java   # Appel à l'API, cache, copie de secours, erreurs, sécurité SSRF
+    ├── FootballDataRateLimiter.java    # Limite de débit à fenêtre glissante
+    └── StaleResponse.java              # Âge de la copie servie, attaché à la requête en cours
 Dockerfile                              # Image en deux étapes (JDK 25 → JRE 25)
 openapi.json                            # Contrat de l'API, régénéré par les tests
 render.yaml                             # Déploiement sur Render (Blueprint)
@@ -243,7 +256,7 @@ render.yaml                             # Déploiement sur Render (Blueprint)
 
 ## Limites connues et pistes
 
-- **Cache et quota en mémoire.** Ils sont perdus au redémarrage et propres à chaque instance. Piste : un cache persistant (PostgreSQL ou Redis).
+- **Cache, copie de secours et quota en mémoire.** Ils sont perdus au redémarrage et propres à chaque instance. Piste : un cache persistant (PostgreSQL ou Redis).
 - **Saison terminée ou en cours ?** Le calcul se fait à partir de l'année civile, donc il est approximatif en juillet-août. Au pire, une saison encore active reste en cache un peu plus longtemps que nécessaire.
 
 ## Licence
