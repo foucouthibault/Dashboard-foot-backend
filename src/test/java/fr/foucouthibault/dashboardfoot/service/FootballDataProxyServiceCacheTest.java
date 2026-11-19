@@ -58,7 +58,7 @@ class FootballDataProxyServiceCacheTest {
             .withUserConfiguration(CacheConfig.class)
             .run(context -> defaults.set(context.getBean(CacheConfig.class)));
         CacheManager cacheManager = defaults.get().cacheManager(ticker, ticker.clock());
-        rateLimiter = spy(new FootballDataRateLimiter(1000));
+        rateLimiter = spy(new FootballDataRateLimiter(1000, 1000));
         service = new FootballDataProxyService(restTemplate, cacheManager, rateLimiter);
         setField("apiBaseUrl", BASE);
         setField("apiToken", "test-token");
@@ -93,7 +93,7 @@ class FootballDataProxyServiceCacheTest {
         ticker.advance(Duration.ofHours(24).minusSeconds(1));
         service.getCompetition("FL1", new HttpHeaders());
         verifyOutgoingCalls(COMPETITION_URI, 1);
-        verify(rateLimiter, times(1)).tryAcquire();
+        verify(rateLimiter, times(1)).tryAcquire(any());
 
         ticker.advance(Duration.ofSeconds(2));
         service.getCompetition("FL1", new HttpHeaders());
@@ -157,7 +157,7 @@ class FootballDataProxyServiceCacheTest {
         assertEquals(2015L, first.get().id());
         assertSame(first.get(), second.get());
         verifyOutgoingCalls(COMPETITION_URI, 1);
-        verify(rateLimiter, times(1)).tryAcquire();
+        verify(rateLimiter, times(1)).tryAcquire(any());
     }
 
     /** Attend que le fil soit bloqué sur le chargement en cours (verrou de Caffeine). */

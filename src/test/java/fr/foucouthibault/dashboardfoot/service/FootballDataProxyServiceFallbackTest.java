@@ -70,7 +70,7 @@ class FootballDataProxyServiceFallbackTest {
             .run(context -> defaults.set(context.getBean(CacheConfig.class)));
         CacheManager cacheManager = defaults.get().cacheManager(ticker, ticker.clock());
         rateLimiter = mock(FootballDataRateLimiter.class);
-        when(rateLimiter.tryAcquire()).thenReturn(true);
+        when(rateLimiter.tryAcquire(any())).thenReturn(true);
         service = new FootballDataProxyService(restTemplate, cacheManager, rateLimiter);
         setField("apiBaseUrl", BASE);
         setField("apiToken", "test-token");
@@ -115,7 +115,7 @@ class FootballDataProxyServiceFallbackTest {
     @Test
     void anExpiredEntryIsServedFromTheCopyWhenTheLimiterRefusesWithoutAnyOutgoingCall() {
         CompetitionResponse fresh = loadThenExpire(new IllegalStateException("ne doit pas être appelé"));
-        when(rateLimiter.tryAcquire()).thenReturn(false);
+        when(rateLimiter.tryAcquire(any())).thenReturn(false);
 
         CompetitionResponse served = service.getCompetition("FL1", new HttpHeaders());
 
@@ -141,10 +141,10 @@ class FootballDataProxyServiceFallbackTest {
             .thenReturn(new ResponseEntity<>("{\"id\":2015}", HttpStatus.OK));
         service.getCompetition("FL1", new HttpHeaders());
         ticker.advance(AFTER_MAIN_EXPIRY);
-        when(rateLimiter.tryAcquire()).thenReturn(false);
+        when(rateLimiter.tryAcquire(any())).thenReturn(false);
         service.getCompetition("FL1", new HttpHeaders());
 
-        when(rateLimiter.tryAcquire()).thenReturn(true);
+        when(rateLimiter.tryAcquire(any())).thenReturn(true);
         service.getCompetition("FL1", new HttpHeaders());
 
         verifyOutgoingCalls(COMPETITION_URI, 2);
@@ -201,8 +201,8 @@ class FootballDataProxyServiceFallbackTest {
 
     @Test
     void withoutACopyTheLimiterRefusalStillReaches429() {
-        when(rateLimiter.tryAcquire()).thenReturn(false);
-        when(rateLimiter.secondsUntilNextSlot()).thenReturn(12L);
+        when(rateLimiter.tryAcquire(any())).thenReturn(false);
+        when(rateLimiter.secondsUntilNextSlot(any())).thenReturn(12L);
 
         RateLimitExceededException e = assertThrows(RateLimitExceededException.class,
             () -> service.getCompetition("FL1", new HttpHeaders()));
@@ -223,7 +223,7 @@ class FootballDataProxyServiceFallbackTest {
     @Test
     void theCopyOfAnotherCompetitionIsNeverServed() {
         loadThenExpire(new IllegalStateException());
-        when(rateLimiter.tryAcquire()).thenReturn(false);
+        when(rateLimiter.tryAcquire(any())).thenReturn(false);
 
         assertThrows(RateLimitExceededException.class, () -> service.getCompetition("PL", new HttpHeaders()));
     }
@@ -260,7 +260,7 @@ class FootballDataProxyServiceFallbackTest {
     void outsideAnHttpRequestTheCopyIsStillServed() {
         RequestContextHolder.resetRequestAttributes();
         CompetitionResponse fresh = loadThenExpire(new IllegalStateException());
-        when(rateLimiter.tryAcquire()).thenReturn(false);
+        when(rateLimiter.tryAcquire(any())).thenReturn(false);
 
         assertEquals(fresh, service.getCompetition("FL1", new HttpHeaders()));
     }

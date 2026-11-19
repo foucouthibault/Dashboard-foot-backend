@@ -88,7 +88,7 @@ class CompetitionProxyHttpTest {
     @BeforeEach
     void setUp() {
         cacheManager.getCacheNames().forEach(name -> cacheManager.getCache(name).clear());
-        when(rateLimiter.tryAcquire()).thenReturn(true);
+        when(rateLimiter.tryAcquire(any())).thenReturn(true);
     }
 
     private static String fixture(String name) throws IOException {
@@ -246,7 +246,7 @@ class CompetitionProxyHttpTest {
         mockMvc.perform(get("/api/competitions/FL1")).andExpect(status().isOk());
 
         verify(restTemplate, times(1)).exchange(any(URI.class), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class));
-        verify(rateLimiter, times(1)).tryAcquire();
+        verify(rateLimiter, times(1)).tryAcquire(any());
     }
 
     @Test
@@ -259,7 +259,7 @@ class CompetitionProxyHttpTest {
             .andExpect(jsonPath("$.scorers", hasSize(3)));
 
         verify(restTemplate, times(1)).exchange(any(URI.class), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class));
-        verify(rateLimiter, times(1)).tryAcquire();
+        verify(rateLimiter, times(1)).tryAcquire(any());
     }
 
     // ==================== Buteurs : limit et season ====================
@@ -350,7 +350,7 @@ class CompetitionProxyHttpTest {
     void invalidId_doesNotConsumeTheQuota() throws Exception {
         mockMvc.perform(get("/api/competitions/FL1$")).andExpect(status().isBadRequest());
 
-        verify(rateLimiter, never()).tryAcquire();
+        verify(rateLimiter, never()).tryAcquire(any());
     }
 
     // ==================== season invalide ====================
@@ -391,7 +391,7 @@ class CompetitionProxyHttpTest {
             .andExpect(jsonPath("$.status").value(400))
             .andExpect(jsonPath("$.title").value("Bad Request"));
 
-        verify(rateLimiter, never()).tryAcquire();
+        verify(rateLimiter, never()).tryAcquire(any());
     }
 
     // ==================== Copie de secours (#76) ====================
@@ -417,7 +417,7 @@ class CompetitionProxyHttpTest {
         upstreamReturns(BASE + "/competitions/FL1", fixture("competition.json"));
         mockMvc.perform(get("/api/competitions/FL1")).andExpect(status().isOk());
         expireMainCaches();
-        when(rateLimiter.tryAcquire()).thenReturn(false);
+        when(rateLimiter.tryAcquire(any())).thenReturn(false);
 
         mockMvc.perform(get("/api/competitions/FL1"))
             .andExpect(status().isOk())
@@ -444,8 +444,8 @@ class CompetitionProxyHttpTest {
 
     @Test
     void rateLimitExceeded_returns429() throws Exception {
-        when(rateLimiter.tryAcquire()).thenReturn(false);
-        when(rateLimiter.secondsUntilNextSlot()).thenReturn(42L);
+        when(rateLimiter.tryAcquire(any())).thenReturn(false);
+        when(rateLimiter.secondsUntilNextSlot(any())).thenReturn(42L);
 
         mockMvc.perform(get("/api/competitions/FL1"))
             .andExpect(status().isTooManyRequests());
@@ -454,8 +454,8 @@ class CompetitionProxyHttpTest {
 
     @Test
     void rateLimitExceeded_sendsRetryAfterHeader() throws Exception {
-        when(rateLimiter.tryAcquire()).thenReturn(false);
-        when(rateLimiter.secondsUntilNextSlot()).thenReturn(42L);
+        when(rateLimiter.tryAcquire(any())).thenReturn(false);
+        when(rateLimiter.secondsUntilNextSlot(any())).thenReturn(42L);
 
         mockMvc.perform(get("/api/competitions/FL1/matches"))
             .andExpect(header().string("Retry-After", "42"))
@@ -464,8 +464,8 @@ class CompetitionProxyHttpTest {
 
     @Test
     void rateLimitExceeded_bodyIsAProblemDetail() throws Exception {
-        when(rateLimiter.tryAcquire()).thenReturn(false);
-        when(rateLimiter.secondsUntilNextSlot()).thenReturn(42L);
+        when(rateLimiter.tryAcquire(any())).thenReturn(false);
+        when(rateLimiter.secondsUntilNextSlot(any())).thenReturn(42L);
 
         mockMvc.perform(get("/api/competitions/FL1"))
             .andExpect(jsonPath("$.title").value("Too Many Requests"))

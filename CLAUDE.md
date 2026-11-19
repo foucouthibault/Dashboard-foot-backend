@@ -43,7 +43,9 @@ Chaque commit sur `main` redéploie l'API publique une fois la CI passée.
 - `model/` : records des réponses (`CompetitionResponse`, `StandingsResponse`,
   `MatchesResponse`, `ScorersResponse`), limités aux champs lus par le frontend. Listes
   immuables : les instances sont partagées par le cache.
-- `service/FootballDataRateLimiter` : quota global à fenêtre glissante, `Clock` injectable.
+- `service/FootballDataRateLimiter` : quota global à fenêtre glissante, `Clock` injectable ; deux
+  catégories (`QuotaCategory`) : les saisons terminées (cache historique) n'ont qu'une part du
+  quota (3/10 par défaut), la saison en cours, les matchs et les compétitions prennent le reste.
 - `config/CacheConfig` : quatre caches Caffeine (compétitions 24 h, saison terminée 30 jours ;
   matchs et saison en cours : durée calculée par `MatchAwareTtl` à partir des matchs de la
   compétition déjà en cache, 60 s pendant un match, sinon jusqu'au prochain coup d'envoi entre
@@ -70,7 +72,7 @@ Chaque commit sur `main` redéploie l'API publique une fois la CI passée.
 ## Invariants à ne pas casser
 
 - **Quota football-data.org : 10 appels/minute pour tout le monde.** Tout appel sortant
-  passe par `rateLimiter.tryAcquire()` ; un hit de cache ne doit jamais le consommer.
+  passe par `rateLimiter.tryAcquire(catégorie)` ; un hit de cache ne doit jamais le consommer.
   Toute nouvelle route doit passer par `cached(...)`, qui charge via `Cache.get(clé, chargeur)` :
   un seul appel sortant par clé, même pour des requêtes simultanées.
 - **Seules les réponses 2xx sont mises en cache.**
