@@ -260,15 +260,21 @@ public class FootballDataProxyService {
             .addKeyValue("cache", cacheName)
             .addKeyValue("cacheKey", forLog(key))
             .log("Absent du cache {} : {}", cacheName, forLog(key));
-        return fetch(url, incomingHeaders, type);
+        return fetch(url, incomingHeaders, type, quotaCategory(cacheName));
     }
 
-    private <T> T fetch(String url, HttpHeaders incomingHeaders, Class<T> type) {
-        if (!rateLimiter.tryAcquire()) {
-            long retryAfter = rateLimiter.secondsUntilNextSlot();
+    /** Les saisons terminées n'ont droit qu'à une part du quota ; tout le reste compte comme en cours. */
+    static QuotaCategory quotaCategory(String cacheName) {
+        return CacheConfig.HISTORICAL_SEASON_CACHE.equals(cacheName) ? QuotaCategory.HISTORICAL : QuotaCategory.CURRENT;
+    }
+
+    private <T> T fetch(String url, HttpHeaders incomingHeaders, Class<T> type, QuotaCategory category) {
+        if (!rateLimiter.tryAcquire(category)) {
+            long retryAfter = rateLimiter.secondsUntilNextSlot(category);
             log.atWarn()
                 .addKeyValue(EVENT, EVENT_QUOTA_ATTEINT)
                 .addKeyValue("retryAfter", retryAfter)
+                .addKeyValue("quotaCategory", category.name())
                 .log("Quota interne d'appels à football-data.org atteint, requête refusée ({}s avant réessai) pour {}", retryAfter, forLog(url));
             throw new RateLimitExceededException(retryAfter);
         }

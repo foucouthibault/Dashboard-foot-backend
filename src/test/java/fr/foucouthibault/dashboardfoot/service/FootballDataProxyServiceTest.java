@@ -53,7 +53,7 @@ class FootballDataProxyServiceTest {
         cacheManager = buildCacheManager();
         // Vraie instance (pas de mock) pour ne pas retester la fenêtre glissante ici,
         // couverte par FootballDataRateLimiterTest ; large marge pour ne jamais gêner ces tests.
-        rateLimiter = new FootballDataRateLimiter(1000);
+        rateLimiter = new FootballDataRateLimiter(1000, 1000);
 
         service = new FootballDataProxyService(restTemplate, cacheManager, rateLimiter);
         setField("apiBaseUrl", "https://api.football-data.org/v4");
@@ -198,8 +198,8 @@ class FootballDataProxyServiceTest {
     @Test
     void whenRateLimitIsExhausted_returns429WithoutCallingUpstream() {
         FootballDataRateLimiter exhausted = mock(FootballDataRateLimiter.class);
-        when(exhausted.tryAcquire()).thenReturn(false);
-        when(exhausted.secondsUntilNextSlot()).thenReturn(37L);
+        when(exhausted.tryAcquire(any())).thenReturn(false);
+        when(exhausted.secondsUntilNextSlot(any())).thenReturn(37L);
         FootballDataProxyService limitedService = new FootballDataProxyService(restTemplate, cacheManager, exhausted);
 
         RateLimitExceededException e = assertThrows(RateLimitExceededException.class,
@@ -214,7 +214,7 @@ class FootballDataProxyServiceTest {
     @Test
     void idContainingALineBreakCannotForgeAFakeLogLine(CapturedOutput output) {
         FootballDataRateLimiter exhausted = mock(FootballDataRateLimiter.class);
-        when(exhausted.tryAcquire()).thenReturn(false);
+        when(exhausted.tryAcquire(any())).thenReturn(false);
         FootballDataProxyService limitedService = new FootballDataProxyService(restTemplate, cacheManager, exhausted);
         setFieldOn(limitedService, "apiBaseUrl", "https://api.football-data.org/v4");
 

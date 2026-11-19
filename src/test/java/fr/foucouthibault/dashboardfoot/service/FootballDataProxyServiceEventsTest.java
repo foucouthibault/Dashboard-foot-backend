@@ -62,7 +62,7 @@ class FootballDataProxyServiceEventsTest {
         service = new FootballDataProxyService(restTemplate, cacheManager, rateLimiter);
         setField("apiBaseUrl", "https://api.football-data.org/v4");
         setField("apiToken", "cle-secrete-de-test");
-        when(rateLimiter.tryAcquire()).thenReturn(true);
+        when(rateLimiter.tryAcquire(any())).thenReturn(true);
     }
 
     @AfterEach
@@ -103,12 +103,12 @@ class FootballDataProxyServiceEventsTest {
 
     @Test
     void rateLimiterRefusalProducesQuotaAtteintWithRetryAfter() {
-        when(rateLimiter.tryAcquire()).thenReturn(false);
-        when(rateLimiter.secondsUntilNextSlot()).thenReturn(17L);
+        when(rateLimiter.tryAcquire(any())).thenReturn(false);
+        when(rateLimiter.secondsUntilNextSlot(any())).thenReturn(17L);
 
         assertThrows(RateLimitExceededException.class, () -> service.getCompetition("FL1", new HttpHeaders()));
 
-        assertThat(event("quota_atteint")).containsEntry("retryAfter", 17L);
+        assertThat(event("quota_atteint")).containsEntry("retryAfter", 17L).containsEntry("quotaCategory", "CURRENT");
     }
 
     @Test

@@ -95,7 +95,7 @@ class FootballDataProxyServiceCharacterizationTest {
 
     /** Limiteur réel sur une horloge figée : le quota ne dépend pas de l'heure réelle. */
     private static FootballDataRateLimiter limiter(int maxRequestsPerMinute) {
-        return new FootballDataRateLimiter(maxRequestsPerMinute, Duration.ofMinutes(1), FIXED_CLOCK);
+        return new FootballDataRateLimiter(maxRequestsPerMinute, maxRequestsPerMinute, Duration.ofMinutes(1), FIXED_CLOCK);
     }
 
     private static void setField(FootballDataProxyService target, String name, String value) {

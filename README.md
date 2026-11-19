@@ -47,6 +47,7 @@ Les réponses reprennent la structure de football-data.org, réduite aux champs 
 ## Choix techniques
 
 - **Un quota global, pas par visiteur.** `FootballDataRateLimiter` applique une fenêtre glissante d'une minute à tous les appels sortants réels. Quand le quota est atteint, l'API répond `429` avec un en-tête `Retry-After` au lieu de se faire bloquer par football-data.org. Les réponses servies depuis le cache ne comptent pas dans le quota.
+- **Une part du quota réservée aux saisons terminées.** Le limiteur distingue deux catégories : les saisons terminées n'ont droit qu'à 3 appels par minute (`football-data.api.rate-limit-historical-per-minute`), pour qu'un visiteur qui parcourt les saisons passées ne provoque pas de `429` pour ceux de la saison en cours ; la saison en cours, les matchs et les compétitions peuvent utiliser tout le reste du quota. Le total ne dépasse jamais le quota global, et `Retry-After` est calculé pour la catégorie refusée.
 - **Un cache adapté à chaque type de donnée** (`CacheConfig`) :
   - 24 h pour les compétitions (nom, code, emblème), qui ne changent pratiquement jamais : l'accueil en affiche 6 ;
   - pour les matchs, le classement et les buteurs de la saison en cours, une durée déduite des matchs de la compétition (`MatchAwareTtl`), puisque ces données ne changent que quand un match se joue : 60 s pendant un match (statut `IN_PLAY`/`PAUSED`, ou coup d'envoi passé depuis moins de 3 h alors que le statut n'a pas encore changé), sinon jusqu'au prochain coup d'envoi, entre 60 s et 1 h, et 1 h sans match à venir. Le classement et les buteurs lisent les matchs déjà en cache, sans appel supplémentaire ; s'ils n'y sont pas, ils gardent 5 min ;
@@ -116,6 +117,7 @@ Toutes les valeurs sont dans `src/main/resources/application.properties` et peuv
 | `football-data.api.token` | variable `FOOTBALL_DATA_API_TOKEN` | Clé d'API football-data.org |
 | `football-data.api.base-url` | `https://api.football-data.org/v4` | URL de l'API |
 | `football-data.api.rate-limit-per-minute` | `10` | Quota d'appels sortants par minute |
+| `football-data.api.rate-limit-historical-per-minute` | `3` | Part de ce quota réservée aux saisons terminées (ramenée au quota total si elle le dépasse) |
 | `football-data.cache.competition-ttl-hours` | `24` | Cache des compétitions |
 | `football-data.cache.live-ttl-seconds` | `60` | Matchs et saison en cours pendant un match de la compétition |
 | `football-data.cache.idle-min-ttl-seconds` | `60` | Hors match : plancher de la durée « jusqu'au prochain coup d'envoi » |
@@ -169,7 +171,7 @@ En local et dans les tests, les logs restent au format texte de Spring Boot. Sur
 | `event` | Niveau | Champs | Quand |
 |---|---|---|---|
 | `cache_manque` | `INFO` | `cache`, `cacheKey` | Réponse absente du cache : suit un appel à football-data.org ou un refus du limiteur. `INFO` car le volume est borné par le quota (10 appels/minute) |
-| `quota_atteint` | `WARN` | `retryAfter` (secondes) | Le limiteur interne refuse l'appel, le client reçoit un `429` |
+| `quota_atteint` | `WARN` | `retryAfter` (secondes), `quotaCategory` (`CURRENT` ou `HISTORICAL`) | Le limiteur interne refuse l'appel, le client reçoit un `429` |
 | `amont_erreur` | `WARN` | `upstreamStatus` | football-data.org a répondu par une erreur (`403`, `404`, `429`…), relayée au client |
 | `amont_indisponible` | `WARN` | `stack_trace` | Panne réseau, réponse vide ou illisible, le client reçoit un `502` |
 | `donnee_perimee_servie` | `WARN` | `cache`, `cacheKey`, `reason` (`quota_interne`, `amont_erreur`, `amont_indisponible`), `ageSeconds` | La copie de secours est servie à la place d'une erreur ; suit la ligne de l'erreur (`quota_atteint`, `amont_erreur` ou `amont_indisponible`) |
@@ -225,7 +227,7 @@ Les tests ne demandent ni clé d'API ni accès réseau (l'API est simulée) :
 - **Santé** (`ActuatorHealthTest`) : `/actuator/health` répond `{"status":"UP"}` sans détails ni appel à football-data.org, aucun autre endpoint Actuator n'est exposé.
 - **CORS** (`CorsConfigTest`) : en-tête `Access-Control-Allow-Origin` pour une origine autorisée seulement, `GET` uniquement (requête simple et preflight), `Retry-After`, `X-Request-Id` et `Age` exposés, en-têtes `sentry-trace` et `baggage` acceptés et tout autre en-tête refusé, rien sans configuration.
 - **Sentry** (`SentryReportingTest`, `SentryFallbackReportingTest`, `SentryDisabledTest`, `SentryEventFilterTest`) : le transport est remplacé par un enregistreur, aucun événement ne quitte la machine. Sans DSN, rien n'est envoyé ; avec un DSN, les erreurs attendues sont écartées, les autres partent avec environnement et version, sans en-têtes, cookies, adresse IP ni clé. Une panne masquée par la copie de secours part quand même, pas le `429` interne remplacé par la copie.
-- **Limiteur de débit** : quota dans la fenêtre, libération des places, calcul de `Retry-After`. Le temps est simulé avec une `Clock` injectée.
+- **Limiteur de débit** : quota dans la fenêtre, libération des places, part des saisons terminées jamais dépassée, total jamais dépassé quelles que soient les catégories, calcul de `Retry-After` par catégorie (`FootballDataRateLimiterTest`, `FootballDataProxyServiceQuotaShareTest`). Le temps est simulé avec une `Clock` injectée.
 
 La CI GitHub Actions compile le projet et lance les tests à chaque push et chaque pull request. Elle construit aussi l'image Docker sans la publier, puis vérifie que le conteneur démarre et répond `UP` sur `/actuator/health`. Dependabot maintient les dépendances à jour.
 

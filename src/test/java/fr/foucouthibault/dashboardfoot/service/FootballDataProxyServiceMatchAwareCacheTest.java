@@ -47,7 +47,7 @@ class FootballDataProxyServiceMatchAwareCacheTest {
             .run(context -> defaults.set(context.getBean(CacheConfig.class)));
         CacheManager cacheManager = defaults.get().cacheManager(time, time.clock());
         FootballDataRateLimiter rateLimiter = mock(FootballDataRateLimiter.class);
-        when(rateLimiter.tryAcquire()).thenReturn(true);
+        when(rateLimiter.tryAcquire(any())).thenReturn(true);
         service = new FootballDataProxyService(restTemplate, cacheManager, rateLimiter);
         setField("apiBaseUrl", BASE);
         setField("apiToken", "test-token");

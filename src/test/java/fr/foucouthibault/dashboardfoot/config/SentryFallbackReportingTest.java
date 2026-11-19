@@ -77,7 +77,7 @@ class SentryFallbackReportingTest {
     @BeforeEach
     void setUp() {
         cacheManager.getCacheNames().forEach(name -> cacheManager.getCache(name).clear());
-        when(rateLimiter.tryAcquire()).thenReturn(true);
+        when(rateLimiter.tryAcquire(any())).thenReturn(true);
     }
 
     @AfterAll
@@ -127,7 +127,7 @@ class SentryFallbackReportingTest {
     @Test
     void internalRateLimitReplacedByTheCopyIsNotSent() throws Exception {
         copyExistsThenUpstream(new IllegalStateException("ne doit pas être appelé"));
-        when(rateLimiter.tryAcquire()).thenReturn(false);
+        when(rateLimiter.tryAcquire(any())).thenReturn(false);
 
         mockMvc.perform(get(ROUTE))
             .andExpect(status().isOk())
