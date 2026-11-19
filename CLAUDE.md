@@ -35,23 +35,28 @@ Chaque commit sur `main` redéploie l'API publique une fois la CI passée.
 - `controller/ApiExceptionHandler` : traduit les exceptions du paquet `exception` en
   `ProblemDetail` (RFC 9457, `application/problem+json`) au `detail` fixe ; étend
   `ResponseEntityExceptionHandler` pour que les erreurs de Spring MVC aient le même format.
-- `service/FootballDataProxyService` : cache, appel HTTP, désérialisation en records,
-  erreurs par exceptions, contrôle SSRF, découpage des buteurs.
+- `service/FootballDataProxyService` : cache, copie de secours, appel HTTP, désérialisation
+  en records, erreurs par exceptions, contrôle SSRF, découpage des buteurs.
+- `service/StaleResponse` + `controller/StaleResponseAgeAdvice` : l'âge d'une copie de secours
+  servie est posé en attribut de la requête, puis traduit en en-tête `Age` ; une réponse fraîche
+  n'en porte pas.
 - `model/` : records des réponses (`CompetitionResponse`, `StandingsResponse`,
   `MatchesResponse`, `ScorersResponse`), limités aux champs lus par le frontend. Listes
   immuables : les instances sont partagées par le cache.
 - `service/FootballDataRateLimiter` : quota global à fenêtre glissante, `Clock` injectable.
 - `config/CacheConfig` : quatre caches Caffeine (compétitions 24 h, matchs 60 s, saison en
-  cours 5 min, saison terminée 30 jours), avec un `Ticker` injectable pour les tests.
+  cours 5 min, saison terminée 30 jours), chacun doublé d'une copie de secours plus durable
+  (`fallbackCacheName`, 7 jours / 6 h / 24 h / 60 jours), avec un `Ticker` injectable pour les tests.
 - `config/CorsConfig` : CORS sur `/api/**`, `GET` uniquement, pour les origines de
   `app.cors.allowed-origins` (vide par défaut : aucune origine externe). Expose `Retry-After`,
-  que le frontend lit sur un `429`, et `X-Request-Id` ; n'accepte que les en-têtes `Accept`, `Accept-Language`,
+  que le frontend lit sur un `429`, `X-Request-Id` et `Age` ; n'accepte que les en-têtes `Accept`, `Accept-Language`,
   `sentry-trace` et `baggage`.
 - `config/SentryConfig` + `config/SentryEventFilter` : remontée des erreurs vers Sentry,
   désactivée sans `SENTRY_DSN`. Le filtre écarte les erreurs attendues (`429` interne, `400`,
   `403`/`404` relayés) et retire en-têtes, cookies, IP et utilisateur. `ApiExceptionHandler`
   envoie explicitement ce qu'il gère et qui signale une panne (`502`, `429` de football-data.org) ;
-  le starter ne voit que les exceptions non gérées.
+  le service fait de même pour une panne masquée par la copie de secours (jamais pour le `429`
+  interne) ; le starter ne voit que les exceptions non gérées.
 - `config/RequestIdFilter` : met un `requestId` dans le MDC (repris d'un `X-Request-Id` sûr,
   sinon UUID) et le renvoie dans `X-Request-Id`. Logs JSON en production (`LOG_FORMAT=logstash`) ;
   les lignes notables du service portent un champ `event` stable (`quota_atteint`,
@@ -66,6 +71,10 @@ Chaque commit sur `main` redéploie l'API publique une fois la CI passée.
   Toute nouvelle route doit passer par `cached(...)`, qui charge via `Cache.get(clé, chargeur)` :
   un seul appel sortant par clé, même pour des requêtes simultanées.
 - **Seules les réponses 2xx sont mises en cache.**
+- **Copie de secours** : chaque réponse réussie est aussi copiée dans le cache de secours. Elle
+  n'est servie (avec `Age`) qu'après un échec passager : quota interne, `429`/`5xx` amont, panne
+  réseau ou réponse illisible. Un `400`/`403`/`404` amont reste relayé. La servir ne consomme pas
+  de quota et ne remplit pas le cache principal.
 - **Les buteurs sont toujours demandés avec `limit=50`** puis découpés localement :
   le `limit` du client ne fait pas partie de la clé de cache.
 - **Saison terminée = année < année civile en cours** (`isHistoricalSeason`). Le frontend

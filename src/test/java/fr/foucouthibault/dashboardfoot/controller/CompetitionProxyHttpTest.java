@@ -394,6 +394,52 @@ class CompetitionProxyHttpTest {
         verify(rateLimiter, never()).tryAcquire();
     }
 
+    // ==================== Copie de secours (#76) ====================
+
+    /** Entrée principale expirée (simulée par un vidage), copie de secours encore présente. */
+    private void expireMainCaches() {
+        cacheManager.getCacheNames().stream()
+            .filter(name -> !name.endsWith("Fallback"))
+            .forEach(name -> cacheManager.getCache(name).clear());
+    }
+
+    @Test
+    void freshResponse_hasNoAgeHeader() throws Exception {
+        upstreamReturns(BASE + "/competitions/FL1", fixture("competition.json"));
+
+        mockMvc.perform(get("/api/competitions/FL1"))
+            .andExpect(status().isOk())
+            .andExpect(header().doesNotExist("Age"));
+    }
+
+    @Test
+    void rateLimitExceededWithACopy_servesTheCopyWithAnAgeHeaderInsteadOf429() throws Exception {
+        upstreamReturns(BASE + "/competitions/FL1", fixture("competition.json"));
+        mockMvc.perform(get("/api/competitions/FL1")).andExpect(status().isOk());
+        expireMainCaches();
+        when(rateLimiter.tryAcquire()).thenReturn(false);
+
+        mockMvc.perform(get("/api/competitions/FL1"))
+            .andExpect(status().isOk())
+            .andExpect(header().string("Age", "0"))
+            .andExpect(header().doesNotExist("Retry-After"))
+            .andExpect(jsonPath("$.name").value("Ligue 1"));
+        verify(restTemplate, times(1)).exchange(any(URI.class), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class));
+    }
+
+    @Test
+    void upstreamNotFoundWithACopy_isStillRelayedWithoutAgeHeader() throws Exception {
+        when(restTemplate.exchange(eq(URI.create(BASE + "/competitions/FL1")), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class)))
+            .thenReturn(ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(fixture("competition.json")))
+            .thenThrow(new HttpClientErrorException(HttpStatus.NOT_FOUND));
+        mockMvc.perform(get("/api/competitions/FL1")).andExpect(status().isOk());
+        expireMainCaches();
+
+        mockMvc.perform(get("/api/competitions/FL1"))
+            .andExpect(status().isNotFound())
+            .andExpect(header().doesNotExist("Age"));
+    }
+
     // ==================== Quota atteint ====================
 
     @Test
