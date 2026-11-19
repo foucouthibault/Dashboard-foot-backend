@@ -44,8 +44,11 @@ Chaque commit sur `main` redéploie l'API publique une fois la CI passée.
   `MatchesResponse`, `ScorersResponse`), limités aux champs lus par le frontend. Listes
   immuables : les instances sont partagées par le cache.
 - `service/FootballDataRateLimiter` : quota global à fenêtre glissante, `Clock` injectable.
-- `config/CacheConfig` : quatre caches Caffeine (compétitions 24 h, matchs 60 s, saison en
-  cours 5 min, saison terminée 30 jours), chacun doublé d'une copie de secours plus durable
+- `config/CacheConfig` : quatre caches Caffeine (compétitions 24 h, saison terminée 30 jours ;
+  matchs et saison en cours : durée calculée par `MatchAwareTtl` à partir des matchs de la
+  compétition déjà en cache, 60 s pendant un match, sinon jusqu'au prochain coup d'envoi entre
+  60 s et 1 h, 5 min pour le classement et les buteurs si les matchs ne sont pas en cache ; clés
+  construites par `matchesKey`/`seasonKey`), chacun doublé d'une copie de secours plus durable
   (`fallbackCacheName`, 7 jours / 6 h / 24 h / 60 jours), avec un `Ticker` injectable pour les tests.
 - `config/CorsConfig` : CORS sur `/api/**`, `GET` uniquement, pour les origines de
   `app.cors.allowed-origins` (vide par défaut : aucune origine externe). Expose `Retry-After`,

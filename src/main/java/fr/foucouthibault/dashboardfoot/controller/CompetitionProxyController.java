@@ -46,7 +46,10 @@ public class CompetitionProxyController {
     private static final String SEASON_DESCRIPTION = "Année de début de la saison ; saison en cours si absent";
     private static final String AGE_DESCRIPTION = "Présent seulement quand football-data.org est indisponible ou le quota "
         + "atteint : la réponse vient alors de la copie de secours, et l'en-tête donne son âge en secondes";
-    private static final String SEASON_CACHE = "Cache : 5 min pour la saison en cours, 30 jours pour une saison terminée.";
+    private static final String LIVE_CACHE = "60 s pendant un match de la compétition, sinon jusqu'au prochain coup d'envoi "
+        + "(entre 60 s et 1 h)";
+    private static final String SEASON_CACHE = "Cache, saison en cours : " + LIVE_CACHE
+        + " ; 5 min si les matchs de la compétition n'ont pas encore été demandés. Saison terminée : 30 jours.";
 
     private final FootballDataProxyService footballDataProxyService;
 
@@ -97,7 +100,7 @@ public class CompetitionProxyController {
     @GetMapping("/{id}/matches")
     @ApiResponse(responseCode = "200", description = "OK",
         headers = @Header(name = "Age", description = AGE_DESCRIPTION, schema = @Schema(type = "integer")))
-    @Operation(summary = "Matchs", description = "Matchs de la saison en cours. Cache : 60 s.")
+    @Operation(summary = "Matchs", description = "Matchs de la saison en cours. Cache : " + LIVE_CACHE + ".")
     public MatchesResponse proxyMatches(
             @Parameter(description = ID_DESCRIPTION, example = "FL1", schema = @Schema(pattern = VALID_ID_PATTERN))
             @PathVariable String id,

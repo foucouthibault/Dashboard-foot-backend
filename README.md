@@ -26,9 +26,9 @@ flowchart LR
 | Méthode | Route | Paramètres | Cache |
 |---|---|---|---|
 | `GET` | `/api/competitions/{id}` | — | 24 h |
-| `GET` | `/api/competitions/{id}/standings` | `season` (optionnel, ex. `2025`) | 5 min, ou 30 jours pour une saison terminée |
-| `GET` | `/api/competitions/{id}/matches` | — | 60 s |
-| `GET` | `/api/competitions/{id}/scorers` | `limit`, `season` (optionnels) | 5 min, ou 30 jours pour une saison terminée |
+| `GET` | `/api/competitions/{id}/standings` | `season` (optionnel, ex. `2025`) | Selon les matchs (voir ci-dessous), ou 30 jours pour une saison terminée |
+| `GET` | `/api/competitions/{id}/matches` | — | Selon les matchs : 60 s pendant un match, sinon jusqu'au prochain coup d'envoi (60 s à 1 h) |
+| `GET` | `/api/competitions/{id}/scorers` | `limit`, `season` (optionnels) | Selon les matchs (voir ci-dessous), ou 30 jours pour une saison terminée |
 
 Quand le quota est atteint ou que football-data.org est en panne, une route peut répondre `200` avec la dernière réponse connue et un en-tête `Age` (voir « Copie de secours » ci-dessous).
 
@@ -49,8 +49,7 @@ Les réponses reprennent la structure de football-data.org, réduite aux champs 
 - **Un quota global, pas par visiteur.** `FootballDataRateLimiter` applique une fenêtre glissante d'une minute à tous les appels sortants réels. Quand le quota est atteint, l'API répond `429` avec un en-tête `Retry-After` au lieu de se faire bloquer par football-data.org. Les réponses servies depuis le cache ne comptent pas dans le quota.
 - **Un cache adapté à chaque type de donnée** (`CacheConfig`) :
   - 24 h pour les compétitions (nom, code, emblème), qui ne changent pratiquement jamais : l'accueil en affiche 6 ;
-  - 60 s pour les matchs ;
-  - 5 min pour les classements et buteurs de la saison en cours ;
+  - pour les matchs, le classement et les buteurs de la saison en cours, une durée déduite des matchs de la compétition (`MatchAwareTtl`), puisque ces données ne changent que quand un match se joue : 60 s pendant un match (statut `IN_PLAY`/`PAUSED`, ou coup d'envoi passé depuis moins de 3 h alors que le statut n'a pas encore changé), sinon jusqu'au prochain coup d'envoi, entre 60 s et 1 h, et 1 h sans match à venir. Le classement et les buteurs lisent les matchs déjà en cache, sans appel supplémentaire ; s'ils n'y sont pas, ils gardent 5 min ;
   - 30 jours pour les saisons terminées, qui ne changent plus.
 - **Un seul appel sortant par clé, même pour des requêtes simultanées.** Le cache est rempli par `Cache.get(clé, chargeur)`, atomique avec Caffeine : quand plusieurs requêtes demandent en même temps une donnée absente du cache (l'accueil et ses 6 compétitions, deux visiteurs au même moment), une seule appelle football-data.org et consomme du quota, les autres attendent sa réponse.
 - **Seules les réponses réussies sont mises en cache.** Une erreur passagère (`429`, panne réseau) ne reste pas figée jusqu'à la fin de la durée de vie du cache.
@@ -118,8 +117,10 @@ Toutes les valeurs sont dans `src/main/resources/application.properties` et peuv
 | `football-data.api.base-url` | `https://api.football-data.org/v4` | URL de l'API |
 | `football-data.api.rate-limit-per-minute` | `10` | Quota d'appels sortants par minute |
 | `football-data.cache.competition-ttl-hours` | `24` | Cache des compétitions |
-| `football-data.cache.static-ttl-seconds` | `60` | Cache des matchs |
-| `football-data.cache.current-season-ttl-seconds` | `300` | Cache de la saison en cours |
+| `football-data.cache.live-ttl-seconds` | `60` | Matchs et saison en cours pendant un match de la compétition |
+| `football-data.cache.idle-min-ttl-seconds` | `60` | Hors match : plancher de la durée « jusqu'au prochain coup d'envoi » |
+| `football-data.cache.idle-max-ttl-seconds` | `3600` | Hors match : plafond de cette durée, et durée sans match à venir |
+| `football-data.cache.current-season-ttl-seconds` | `300` | Classement et buteurs de la saison en cours quand les matchs de la compétition ne sont pas en cache |
 | `football-data.cache.historical-season-ttl-hours` | `720` (30 jours) | Cache des saisons terminées |
 | `football-data.cache.fallback.competition-ttl-hours` | `168` (7 jours) | Copie de secours des compétitions |
 | `football-data.cache.fallback.static-ttl-hours` | `6` | Copie de secours des matchs |
@@ -214,6 +215,7 @@ Les tests ne demandent ni clé d'API ni accès réseau (l'API est simulée) :
 - **Service** :
   - utilisation du cache, et une clé de cache par saison ;
   - durée de vie de chaque cache, avec un temps simulé (`Ticker` de Caffeine), et un seul appel sortant pour deux requêtes simultanées (`FootballDataProxyServiceCacheTest`) ;
+  - durée de la saison en cours selon les matchs : courte pendant un match, jusqu'au prochain coup d'envoi sinon, plafonnée, sans appel sortant supplémentaire (`MatchAwareTtlTest`, `FootballDataProxyServiceMatchAwareCacheTest`) ;
   - choix du bon cache selon la saison ;
   - erreurs non mises en cache ;
   - copie de secours servie sur quota atteint, `429`/`5xx` amont, panne réseau ou réponse illisible, sans appel sortant ni remplissage du cache principal ; `400`/`403`/`404` toujours relayés ; copie expirée non servie (`FootballDataProxyServiceFallbackTest`) ;
@@ -235,6 +237,7 @@ src/main/java/fr/foucouthibault/dashboardfoot/
 │   ├── AppConfig.java                  # RestTemplate
 │   ├── CacheConfig.java                # Les quatre caches Caffeine et leurs copies de secours
 │   ├── CorsConfig.java                 # Origines autorisées (CORS)
+│   ├── MatchAwareTtl.java              # Durée de la saison en cours selon les matchs
 │   ├── OpenApiConfig.java              # Description OpenAPI (springdoc)
 │   ├── RequestIdFilter.java            # requestId dans le MDC et l'en-tête X-Request-Id
 │   ├── SentryConfig.java               # Branche le filtre sur le SDK Sentry
