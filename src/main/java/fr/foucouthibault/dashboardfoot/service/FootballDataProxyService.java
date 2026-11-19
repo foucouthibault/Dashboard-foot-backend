@@ -110,13 +110,13 @@ public class FootballDataProxyService {
             .encode()
             .toUriString();
         String cacheName = isHistoricalSeason(season) ? CacheConfig.HISTORICAL_SEASON_CACHE : CacheConfig.CURRENT_SEASON_CACHE;
-        String cacheKey = "standings_" + id + "_" + normalizeSeason(season);
+        String cacheKey = CacheConfig.seasonKey("standings", id, normalizeSeason(season));
         return cached(cacheName, cacheKey, url, headers, StandingsResponse.class);
     }
 
     public MatchesResponse getMatches(String id, HttpHeaders headers) {
         String url = apiBaseUrl + "/competitions/" + id + "/matches";
-        return cached(CacheConfig.STATIC_CACHE, "matches_" + id, url, headers, MatchesResponse.class);
+        return cached(CacheConfig.STATIC_CACHE, CacheConfig.matchesKey(id), url, headers, MatchesResponse.class);
     }
 
     public ScorersResponse getScorers(String id, Integer limit, String season, HttpHeaders headers) {
@@ -127,7 +127,7 @@ public class FootballDataProxyService {
             .encode()
             .toUriString();
         String cacheName = isHistoricalSeason(season) ? CacheConfig.HISTORICAL_SEASON_CACHE : CacheConfig.CURRENT_SEASON_CACHE;
-        String cacheKey = "scorers_" + id + "_" + normalizeSeason(season);
+        String cacheKey = CacheConfig.seasonKey("scorers", id, normalizeSeason(season));
         ScorersResponse full = cached(cacheName, cacheKey, url, headers, ScorersResponse.class);
         return (limit == null || limit >= SCORERS_MAX_LIMIT) ? full : full.limitedTo(limit);
     }

@@ -22,7 +22,6 @@ import java.time.Year;
 import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -47,7 +46,7 @@ class FootballDataProxyServiceCacheTest {
     @Mock
     private RestTemplate restTemplate;
 
-    private final FakeTicker ticker = new FakeTicker();
+    private final SimulatedTime ticker = new SimulatedTime();
     private FootballDataRateLimiter rateLimiter;
     private FootballDataProxyService service;
 
@@ -58,7 +57,7 @@ class FootballDataProxyServiceCacheTest {
         new ApplicationContextRunner()
             .withUserConfiguration(CacheConfig.class)
             .run(context -> defaults.set(context.getBean(CacheConfig.class)));
-        CacheManager cacheManager = defaults.get().cacheManager(ticker);
+        CacheManager cacheManager = defaults.get().cacheManager(ticker, ticker.clock());
         rateLimiter = spy(new FootballDataRateLimiter(1000));
         service = new FootballDataProxyService(restTemplate, cacheManager, rateLimiter);
         setField("apiBaseUrl", BASE);
@@ -116,24 +115,14 @@ class FootballDataProxyServiceCacheTest {
     }
 
     @Test
-    void matchesKeepTheirShortCacheDuration() {
-        URI matchesUri = URI.create(BASE + "/competitions/FL1/matches");
-        upstreamAnswers(matchesUri, "{\"matches\":[]}");
-
-        service.getMatches("FL1", new HttpHeaders());
-        ticker.advance(Duration.ofSeconds(61));
-        service.getMatches("FL1", new HttpHeaders());
-
-        verifyOutgoingCalls(matchesUri, 2);
-    }
-
-    @Test
     void applicationPropertiesUseTheSameDefaultDurations() throws Exception {
         Properties properties = PropertiesLoaderUtils.loadProperties(new ClassPathResource("application.properties"));
 
         assertEquals("24", properties.getProperty("football-data.cache.competition-ttl-hours"));
         assertEquals("720", properties.getProperty("football-data.cache.historical-season-ttl-hours"));
-        assertEquals("60", properties.getProperty("football-data.cache.static-ttl-seconds"));
+        assertEquals("60", properties.getProperty("football-data.cache.live-ttl-seconds"));
+        assertEquals("60", properties.getProperty("football-data.cache.idle-min-ttl-seconds"));
+        assertEquals("3600", properties.getProperty("football-data.cache.idle-max-ttl-seconds"));
         assertEquals("300", properties.getProperty("football-data.cache.current-season-ttl-seconds"));
     }
 
@@ -177,20 +166,6 @@ class FootballDataProxyServiceCacheTest {
         while (thread.getState() != Thread.State.BLOCKED && thread.getState() != Thread.State.WAITING) {
             assertTrue(System.nanoTime() < deadline, "la seconde requête n'attend pas le chargement en cours");
             Thread.sleep(5);
-        }
-    }
-
-    /** Temps simulé pour Caffeine. */
-    private static final class FakeTicker implements Ticker {
-        private final AtomicLong nanos = new AtomicLong();
-
-        @Override
-        public long read() {
-            return nanos.get();
-        }
-
-        void advance(Duration duration) {
-            nanos.addAndGet(duration.toNanos());
         }
     }
 }

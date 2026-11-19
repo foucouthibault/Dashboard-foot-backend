@@ -128,7 +128,7 @@
     },
     "/api/competitions/{id}/matches" : {
       "get" : {
-        "description" : "Matchs de la saison en cours. Cache : 60 s.",
+        "description" : "Matchs de la saison en cours. Cache : 60 s pendant un match de la compétition, sinon jusqu'au prochain coup d'envoi (entre 60 s et 1 h).",
         "operationId" : "proxyMatches",
         "parameters" : [ {
           "description" : "Code (FL1, PL…) ou identifiant numérique de la compétition",
@@ -237,7 +237,7 @@
     },
     "/api/competitions/{id}/scorers" : {
       "get" : {
-        "description" : "Meilleurs buteurs. Les 50 premiers sont mis en cache puis découpés selon limit : changer de limit ne consomme pas de quota. Cache : 5 min pour la saison en cours, 30 jours pour une saison terminée.",
+        "description" : "Meilleurs buteurs. Les 50 premiers sont mis en cache puis découpés selon limit : changer de limit ne consomme pas de quota. Cache, saison en cours : 60 s pendant un match de la compétition, sinon jusqu'au prochain coup d'envoi (entre 60 s et 1 h) ; 5 min si les matchs de la compétition n'ont pas encore été demandés. Saison terminée : 30 jours.",
         "operationId" : "proxyScorers",
         "parameters" : [ {
           "description" : "Code (FL1, PL…) ou identifiant numérique de la compétition",
@@ -366,7 +366,7 @@
     },
     "/api/competitions/{id}/standings" : {
       "get" : {
-        "description" : "Classements général, domicile et extérieur (par poule le cas échéant). Cache : 5 min pour la saison en cours, 30 jours pour une saison terminée.",
+        "description" : "Classements général, domicile et extérieur (par poule le cas échéant). Cache, saison en cours : 60 s pendant un match de la compétition, sinon jusqu'au prochain coup d'envoi (entre 60 s et 1 h) ; 5 min si les matchs de la compétition n'ont pas encore été demandés. Saison terminée : 30 jours.",
         "operationId" : "proxyStandings",
         "parameters" : [ {
           "description" : "Code (FL1, PL…) ou identifiant numérique de la compétition",

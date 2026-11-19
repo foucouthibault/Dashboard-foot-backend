@@ -1,13 +1,17 @@
 package fr.foucouthibault.dashboardfoot.config;
 
+import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import com.github.benmanes.caffeine.cache.Expiry;
 import com.github.benmanes.caffeine.cache.Ticker;
+import fr.foucouthibault.dashboardfoot.model.MatchesResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.CacheManager;
 import org.springframework.cache.caffeine.CaffeineCacheManager;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.time.Clock;
 import java.time.Duration;
 
 /**
@@ -21,15 +25,20 @@ import java.time.Duration;
  * - footballDataHistorical : standings/scorers pour une saison terminée, qui ne changent
  *   plus jamais une fois la saison close
  *
+ * Les matchs et la saison en cours n'ont pas de durée fixe ({@link MatchAwareTtl}) : courte
+ * pendant un match, jusqu'au prochain coup d'envoi sinon (avec plancher et plafond). Le
+ * classement et les buteurs lisent pour cela les matchs de la compétition déjà en cache, sans
+ * appel supplémentaire ; s'ils n'y sont pas, ils gardent la durée par défaut de la saison en cours.
+ *
  * Chaque cache a une copie de secours ({@link #fallbackCacheName(String)}) : elle reçoit chaque
  * réponse réussie et la garde bien plus longtemps, pour la servir à la place d'une erreur quand
  * le quota est atteint ou que football-data.org est en panne (voir FootballDataProxyService).
  * Sa durée de vie dépend de la nature de la donnée : une compétition ou une saison terminée
  * reste utile plusieurs jours, des matchs vieux de plusieurs jours tromperaient le visiteur.
  *
- * Les durées sont mesurées par un {@link Ticker} : celui du système en production, un ticker
- * simulé dans les tests ({@link #cacheManager(Ticker)}). L'âge d'une copie, renvoyé dans
- * l'en-tête {@code Age}, est lu sur le même ticker.
+ * Les durées sont mesurées par un {@link Ticker} et les coups d'envoi comparés à une {@link Clock} :
+ * ceux du système en production, un temps simulé dans les tests ({@link #cacheManager(Ticker, Clock)}).
+ * L'âge d'une copie, renvoyé dans l'en-tête {@code Age}, est lu sur le même ticker.
  */
 @Configuration
 public class CacheConfig {
@@ -40,10 +49,13 @@ public class CacheConfig {
     public static final String HISTORICAL_SEASON_CACHE = "footballDataHistorical";
 
     private static final String FALLBACK_SUFFIX = "Fallback";
+    private static final String MATCHES_KEY_PREFIX = "matches_";
 
     private final Duration competitionTtl;
-    private final Duration staticTtl;
     private final Duration currentSeasonTtl;
+    private final Duration liveTtl;
+    private final Duration idleMinTtl;
+    private final Duration idleMaxTtl;
     private final Duration historicalSeasonTtl;
     private final Duration competitionFallbackTtl;
     private final Duration staticFallbackTtl;
@@ -52,8 +64,10 @@ public class CacheConfig {
 
     public CacheConfig(
         @Value("${football-data.cache.competition-ttl-hours:24}") long competitionTtlHours,
-        @Value("${football-data.cache.static-ttl-seconds:60}") long staticTtlSeconds,
         @Value("${football-data.cache.current-season-ttl-seconds:300}") long currentSeasonTtlSeconds,
+        @Value("${football-data.cache.live-ttl-seconds:60}") long liveTtlSeconds,
+        @Value("${football-data.cache.idle-min-ttl-seconds:60}") long idleMinTtlSeconds,
+        @Value("${football-data.cache.idle-max-ttl-seconds:3600}") long idleMaxTtlSeconds,
         @Value("${football-data.cache.historical-season-ttl-hours:720}") long historicalSeasonTtlHours,
         @Value("${football-data.cache.fallback.competition-ttl-hours:168}") long competitionFallbackTtlHours,
         @Value("${football-data.cache.fallback.static-ttl-hours:6}") long staticFallbackTtlHours,
@@ -61,8 +75,10 @@ public class CacheConfig {
         @Value("${football-data.cache.fallback.historical-season-ttl-hours:1440}") long historicalSeasonFallbackTtlHours
     ) {
         this.competitionTtl = Duration.ofHours(competitionTtlHours);
-        this.staticTtl = Duration.ofSeconds(staticTtlSeconds);
         this.currentSeasonTtl = Duration.ofSeconds(currentSeasonTtlSeconds);
+        this.liveTtl = Duration.ofSeconds(liveTtlSeconds);
+        this.idleMinTtl = Duration.ofSeconds(idleMinTtlSeconds);
+        this.idleMaxTtl = Duration.ofSeconds(idleMaxTtlSeconds);
         this.historicalSeasonTtl = Duration.ofHours(historicalSeasonTtlHours);
         this.competitionFallbackTtl = Duration.ofHours(competitionFallbackTtlHours);
         this.staticFallbackTtl = Duration.ofHours(staticFallbackTtlHours);
@@ -75,18 +91,52 @@ public class CacheConfig {
         return cacheName + FALLBACK_SUFFIX;
     }
 
-    @Bean
-    public CacheManager cacheManager() {
-        return cacheManager(Ticker.systemTicker());
+    /** Clé de cache des matchs d'une compétition. */
+    public static String matchesKey(String competitionId) {
+        return MATCHES_KEY_PREFIX + competitionId;
     }
 
-    /** Même configuration, avec un ticker choisi : les tests y passent un temps simulé. */
-    public CacheManager cacheManager(Ticker ticker) {
+    /**
+     * Clé de cache d'une donnée de saison ({@code standings}, {@code scorers}) :
+     * {@code <type>_<compétition>_<saison>}. Le type et la saison n'ont pas de {@code _}.
+     */
+    public static String seasonKey(String type, String competitionId, String season) {
+        return type + "_" + competitionId + "_" + season;
+    }
+
+    /** Compétition d'une clé construite par {@link #seasonKey}, ou {@code null}. */
+    static String competitionOf(Object seasonKey) {
+        if (!(seasonKey instanceof String key)) {
+            return null;
+        }
+        int first = key.indexOf('_');
+        int last = key.lastIndexOf('_');
+        return first < last ? key.substring(first + 1, last) : null;
+    }
+
+    @Bean
+    public CacheManager cacheManager() {
+        return cacheManager(Ticker.systemTicker(), Clock.systemUTC());
+    }
+
+    /** Même configuration, avec un temps choisi : les tests y passent un temps simulé. */
+    public CacheManager cacheManager(Ticker ticker, Clock clock) {
+        MatchAwareTtl matchAwareTtl = new MatchAwareTtl(liveTtl, idleMinTtl, idleMaxTtl, clock);
+        Cache<Object, Object> matches = cache(Expiry.writing((key, value) -> value instanceof MatchesResponse m
+            ? matchAwareTtl.ttlFor(m)
+            : liveTtl), 100, ticker);
+        // Lecture sans chargement (getIfPresent) : jamais d'appel sortant pour calculer une durée.
+        Cache<Object, Object> currentSeason = cache(Expiry.writing((key, value) -> {
+            String competition = competitionOf(key);
+            Object cachedMatches = competition == null ? null : matches.getIfPresent(matchesKey(competition));
+            return cachedMatches instanceof MatchesResponse m ? matchAwareTtl.ttlFor(m) : currentSeasonTtl;
+        }), 150, ticker);
+
         CaffeineCacheManager manager = new CaffeineCacheManager();
         // Quelques compétitions affichées, quelques saisons consultées par compétition.
         manager.registerCustomCache(COMPETITIONS_CACHE, cache(competitionTtl, 50, ticker));
-        manager.registerCustomCache(STATIC_CACHE, cache(staticTtl, 100, ticker));
-        manager.registerCustomCache(CURRENT_SEASON_CACHE, cache(currentSeasonTtl, 150, ticker));
+        manager.registerCustomCache(STATIC_CACHE, matches);
+        manager.registerCustomCache(CURRENT_SEASON_CACHE, currentSeason);
         manager.registerCustomCache(HISTORICAL_SEASON_CACHE, cache(historicalSeasonTtl, 300, ticker));
         // Copies de secours : mêmes bornes en nombre d'entrées, durées bien plus longues.
         manager.registerCustomCache(fallbackCacheName(COMPETITIONS_CACHE), cache(competitionFallbackTtl, 50, ticker));
@@ -96,11 +146,18 @@ public class CacheConfig {
         return manager;
     }
 
-    private static com.github.benmanes.caffeine.cache.Cache<Object, Object> cache(
-        Duration ttl, long maximumSize, Ticker ticker) {
+    private static Cache<Object, Object> cache(Duration ttl, long maximumSize, Ticker ticker) {
         return Caffeine.newBuilder()
             .maximumSize(maximumSize)
             .expireAfterWrite(ttl)
+            .ticker(ticker)
+            .build();
+    }
+
+    private static Cache<Object, Object> cache(Expiry<Object, Object> expiry, long maximumSize, Ticker ticker) {
+        return Caffeine.newBuilder()
+            .maximumSize(maximumSize)
+            .expireAfter(expiry)
             .ticker(ticker)
             .build();
     }

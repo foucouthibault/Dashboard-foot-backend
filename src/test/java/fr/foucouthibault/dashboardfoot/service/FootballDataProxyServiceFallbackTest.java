@@ -35,7 +35,6 @@ import java.net.URI;
 import java.time.Duration;
 import java.util.Optional;
 import java.util.Properties;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -58,7 +57,7 @@ class FootballDataProxyServiceFallbackTest {
     private static final Duration AFTER_MAIN_EXPIRY = Duration.ofHours(25);
 
     private final RestTemplate restTemplate = mock(RestTemplate.class);
-    private final FakeTicker ticker = new FakeTicker();
+    private final SimulatedTime ticker = new SimulatedTime();
     private final MockHttpServletRequest request = new MockHttpServletRequest();
     private FootballDataRateLimiter rateLimiter;
     private FootballDataProxyService service;
@@ -69,7 +68,7 @@ class FootballDataProxyServiceFallbackTest {
         new ApplicationContextRunner()
             .withUserConfiguration(CacheConfig.class)
             .run(context -> defaults.set(context.getBean(CacheConfig.class)));
-        CacheManager cacheManager = defaults.get().cacheManager(ticker);
+        CacheManager cacheManager = defaults.get().cacheManager(ticker, ticker.clock());
         rateLimiter = mock(FootballDataRateLimiter.class);
         when(rateLimiter.tryAcquire()).thenReturn(true);
         service = new FootballDataProxyService(restTemplate, cacheManager, rateLimiter);
@@ -264,19 +263,5 @@ class FootballDataProxyServiceFallbackTest {
         when(rateLimiter.tryAcquire()).thenReturn(false);
 
         assertEquals(fresh, service.getCompetition("FL1", new HttpHeaders()));
-    }
-
-    /** Temps simulé pour Caffeine. */
-    private static final class FakeTicker implements Ticker {
-        private final AtomicLong nanos = new AtomicLong();
-
-        @Override
-        public long read() {
-            return nanos.get();
-        }
-
-        void advance(Duration duration) {
-            nanos.addAndGet(duration.toNanos());
-        }
     }
 }
