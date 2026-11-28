@@ -40,7 +40,7 @@ jobs:
         id: claude-review
         # Le plugin s'arrête dès que Claude a déjà commenté la PR : il ne sert qu'à la première revue.
         if: github.event.action != 'synchronize'
-        uses: anthropics/claude-code-action@e5812cd75691ca7bbfc57c0ecf4441db3a1ab7dd # v1.0.281
+        uses: anthropics/claude-code-action@4411a9e9b0283becf4b924f7bce360fd7756c78c # v1.0.290
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
@@ -54,7 +54,7 @@ jobs:
       # commentées par Claude). On relit donc les seuls nouveaux commits, avec ses critères.
       - name: Review new commits
         if: github.event.action == 'synchronize'
-        uses: anthropics/claude-code-action@e5812cd75691ca7bbfc57c0ecf4441db3a1ab7dd # v1.0.281
+        uses: anthropics/claude-code-action@4411a9e9b0283becf4b924f7bce360fd7756c78c # v1.0.290
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
